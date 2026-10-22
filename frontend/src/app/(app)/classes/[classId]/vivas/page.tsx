@@ -4,15 +4,16 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { isStaff, type ClassRoom, type VivaAudience, type VivaSummary } from "@/types";
-import { createViva, listVivas } from "@/lib/api/vivas";
+import { createViva, deleteViva, listVivas } from "@/lib/api/vivas";
 import { formatDateTime } from "@/lib/format";
 import { useLoad } from "@/lib/useLoad";
 import { ClassPage } from "@/components/classes/ClassPage";
 import { StudentVivas } from "@/components/student/StudentVivas";
 import { PhaseBadge } from "@/components/vivas/PhaseBadge";
 import { Loading, PageHeader } from "@/components/ui/Display";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { FormError } from "@/components/ui/Field";
-import { CalendarIcon, ChevronRightIcon, UsersIcon } from "@/components/ui/Icons";
+import { CalendarIcon, ChevronRightIcon, TrashIcon, UsersIcon } from "@/components/ui/Icons";
 
 export default function VivasPage() {
   return <ClassPage>{(cls) => (isStaff(cls) ? <Vivas cls={cls} /> : <StudentVivas cls={cls} />)}</ClassPage>;
@@ -35,9 +36,20 @@ const CREATE_OPTIONS: { audience: VivaAudience; title: string; text: string; ico
 
 function Vivas({ cls }: { cls: ClassRoom }) {
   const router = useRouter();
-  const { data, error } = useLoad(() => listVivas(cls.id), cls.id);
+  const { data, error, setData } = useLoad(() => listVivas(cls.id), cls.id);
   const [creating, setCreating] = useState<VivaAudience | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  async function remove(v: VivaSummary) {
+    setDeleteError(null);
+    try {
+      await deleteViva(v.id);
+      setData((data ?? []).filter((x) => x.id !== v.id));
+    } catch (err) {
+      setDeleteError(`${v.title}: ${(err as Error).message}`);
+    }
+  }
 
   async function start(audience: VivaAudience) {
     setCreating(audience);
@@ -91,6 +103,7 @@ function Vivas({ cls }: { cls: ClassRoom }) {
       </section>
 
       <FormError message={error} />
+      <FormError message={deleteError} />
       {data === undefined ? (
         !error && <Loading />
       ) : (
@@ -104,10 +117,10 @@ function Vivas({ cls }: { cls: ClassRoom }) {
             ) : (
               <ul className="panel mt-3 divide-y divide-border overflow-hidden rounded-xl">
                 {g.items.map((v) => (
-                  <li key={v.id}>
+                  <li key={v.id} className="flex items-center gap-2 pr-4 transition hover:bg-raised">
                     <Link
                       href={`/classes/${cls.id}/vivas/${v.id}`}
-                      className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 transition hover:bg-raised"
+                      className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-3 px-5 py-4"
                     >
                       <span className="min-w-0">
                         <span className="block truncate font-medium">{v.title}</span>
@@ -119,6 +132,7 @@ function Vivas({ cls }: { cls: ClassRoom }) {
                       </span>
                       <PhaseBadge phase={v.phase} />
                     </Link>
+                    <ConfirmButton size="sm" label="" icon={<TrashIcon />} onConfirm={() => remove(v)} />
                   </li>
                 ))}
               </ul>

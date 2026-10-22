@@ -6,6 +6,7 @@ from app.api.deps import DbSession, RegisteredUser
 from app.schemas.file import FileOut
 from app.schemas.viva import (
     StudentVivaOut,
+    StudentWorkOut,
     VivaCreateIn,
     VivaFeedbackOut,
     VivaJoinOut,
@@ -75,6 +76,12 @@ def join_viva(viva_id: str, user: RegisteredUser, db: DbSession):
     """Student opens the viva. Allowed only within the join window after the start time;
     reopening after joining is fine until their time is up."""
     return vivas.join(db, viva_id, user)
+
+
+@router.get("/vivas/{viva_id}/students/{student_id}/work", response_model=StudentWorkOut)
+def student_work(viva_id: str, student_id: str, user: RegisteredUser, db: DbSession):
+    """Staff: the files and links the student handed in, to open during the live viva."""
+    return vivas.student_work(db, viva_id, student_id, user)
 
 
 @router.put("/vivas/{viva_id}/students/{student_id}/feedback", response_model=VivaFeedbackOut)

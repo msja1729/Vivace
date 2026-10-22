@@ -9,6 +9,9 @@ from sqlalchemy.orm import Session
 from app.core import storage
 from app.core.db import utcnow
 from app.core.errors import BadRequest, Conflict, Forbidden, NotFound
+from app.live import session as live_session
+from app.live.evaluation import report as ai_report
+from app.live.evaluation.llm import LLMError
 from app.live.integrity.rules import LABELS
 from app.live.session import hub
 from app.models import (
@@ -19,6 +22,7 @@ from app.models import (
     VivaAttempt,
     VivaConductor,
     VivaEvent,
+    VivaFeedback,
     VivaSession,
     VivaStatus,
 )
@@ -26,8 +30,10 @@ from app.schemas.classroom import PersonOut
 from app.schemas.live import (
     CriterionResult,
     EventOut,
+    QAOut,
     QueueOut,
     QueueRow,
+    ReleaseIn,
     ResultIn,
     SessionReportOut,
     TurnOut,
@@ -196,7 +202,69 @@ def report(db: Session, session_id: str, user: User) -> SessionReportOut:
             )
             for t in s.turns
         ],
+        qa=[QAOut(**p) for p in ai_report.qa_pairs(s.turns)],
+        ai_report=s.ai_report,
+        sent_to_student=vivas._feedback_out(fb) if (fb := _feedback(db, s)) and fb.released_at else None,
     )
+
+
+def _feedback(db: Session, s: VivaSession) -> VivaFeedback | None:
+    return db.scalar(
+        select(VivaFeedback).where(VivaFeedback.viva_id == s.viva_id, VivaFeedback.student_id == s.student_id)
+    )
+
+
+async def write_ai_report(db: Session, session_id: str, user: User) -> SessionReportOut:
+    """(Re)write the AI's report for a finished interview."""
+    s, _ = _session(db, session_id, user)
+    if s.status != SessionStatus.ended:
+        raise Conflict("End the interview before writing the report.")
+    llm = live_session.get_llm()
+    if llm is None:
+        raise BadRequest(live_session.llm_error() or "The AI isn't available.")
+    try:
+        await ai_report.generate(s.id, live_session.db_factory, llm)
+    except (LLMError, ValueError) as exc:
+        raise BadRequest(str(exc)) from exc
+    db.expire_all()
+    return report(db, session_id, user)
+
+
+def send_to_student(db: Session, session_id: str, data: ReleaseIn, user: User) -> SessionReportOut:
+    """Send the student their marks (with the per-criterion breakdown), the AI's report and / or a
+    message. Copies are kept, so later edits don't change what was sent; sending again updates it."""
+    s, v = _session(db, session_id, user)
+    if s.status != SessionStatus.ended:
+        raise Conflict("End the interview before sending anything to the student.")
+    if data.include_marks and s.score is None:
+        raise BadRequest("Save the marks (Result) before sending them.")
+    if data.include_ai_report and not s.ai_report:
+        raise BadRequest("There is no AI report yet: write it first.")
+    message = data.message.strip()
+    if not (data.include_marks or data.include_ai_report or message):
+        raise BadRequest("Choose what to send.")
+    fb = _feedback(db, s)
+    if fb is None:
+        fb = VivaFeedback(viva_id=v.id, student_id=s.student_id)
+        db.add(fb)
+    weights = {c["name"]: c.get("weight") for c in v.evaluation_criteria}
+    fb.marks = (
+        {
+            "score": s.score,
+            "outOf": 10,
+            "criteria": [
+                {"name": c["name"], "weight": weights.get(c["name"]), "score": c.get("score")}
+                for c in s.criteria_scores
+            ],
+        }
+        if data.include_marks
+        else None
+    )
+    fb.ai_report = s.ai_report if data.include_ai_report else None
+    fb.feedback = message
+    fb.released_at = utcnow()
+    db.commit()
+    return report(db, session_id, user)
 
 
 async def end(db: Session, session_id: str, user: User) -> SessionReportOut:

@@ -14,7 +14,7 @@ from app.live import session as live_session
 from app.live.engines import status as engine_status
 from app.live.session import hub
 from app.models import User
-from app.schemas.live import QueueOut, ResultIn, SessionReportOut
+from app.schemas.live import QueueOut, ReleaseIn, ResultIn, SessionReportOut
 from app.services import live
 
 router = APIRouter(tags=["live vivas"])
@@ -42,6 +42,18 @@ async def end_session(session_id: str, user: RegisteredUser, db: DbSession):
 def save_result(session_id: str, body: ResultIn, user: RegisteredUser, db: DbSession):
     """The examiner's final score (out of 10), per-criterion scores and notes."""
     return live.save_result(db, session_id, body, user)
+
+
+@router.post("/viva-sessions/{session_id}/ai-report", response_model=SessionReportOut)
+async def write_ai_report(session_id: str, user: RegisteredUser, db: DbSession):
+    """(Re)write the AI's report for a finished interview."""
+    return await live.write_ai_report(db, session_id, user)
+
+
+@router.post("/viva-sessions/{session_id}/send", response_model=SessionReportOut)
+def send_to_student(session_id: str, body: ReleaseIn, user: RegisteredUser, db: DbSession):
+    """Send the student their marks, the AI's report and / or a message."""
+    return live.send_to_student(db, session_id, body, user)
 
 
 @router.get("/viva-sessions/{session_id}/events/{event_id}/snapshot")

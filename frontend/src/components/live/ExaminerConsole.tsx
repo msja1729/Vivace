@@ -1,25 +1,41 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import type { ClassRoom, EngineStatus, IntegrityEvent, Person, SessionReport, SessionState, Suggestion, Turn, Viva } from "@/types";
-import { getSessionReport, saveSessionResult } from "@/lib/api/vivas";
+import type {
+  ClassRoom,
+  CopilotPlan,
+  EngineStatus,
+  IntegrityEvent,
+  Person,
+  SessionState,
+  Suggestion,
+  Turn,
+  Viva,
+  VisionStatus,
+} from "@/types";
 import { openCameraAndMic, stopStream, streamAudio } from "@/lib/live/media";
 import { LiveRoom, type LiveMessage } from "@/lib/live/room";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { Button } from "@/components/ui/Button";
 import { Section } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Display";
-import { FormError, TextAreaField, inputClass } from "@/components/ui/Field";
+import { FormError, inputClass } from "@/components/ui/Field";
 import { ChevronLeftIcon, MicIcon, PlayIcon, SparkleIcon, StopIcon } from "@/components/ui/Icons";
 import { EventList, ScoreMeter, Transcript, clock } from "./LiveParts";
 import { DeviceCheck, MicMeter, RemoteVideo } from "./Media";
+import { StudentWorkPanel } from "./StudentWorkPanel";
 
 const KIND_LABEL: Record<Suggestion["kind"], string> = {
   opening: "Opening",
   follow_up: "Follow-up",
-  devils_advocate: "Devil's advocate",
+  deeper: "Same project",
+  devils_advocate: "Probe",
+  cross_project: "Across projects",
+  new_project: "Next project",
 };
+
+const NO_PLAN: CopilotPlan = { projects: [], current: "", covered: [], enough: false, note: "", next: "" };
 
 interface RoomState {
   status: SessionState;
@@ -37,6 +53,9 @@ interface RoomState {
   engines: Record<string, EngineStatus>;
   llm: string;
   calibration: string | null;
+  plan: CopilotPlan;
+  vision: VisionStatus | null;
+  aiReport: "writing" | "ready" | { error: string } | null;
 }
 
 const EMPTY: RoomState = {
@@ -55,6 +74,9 @@ const EMPTY: RoomState = {
   engines: {},
   llm: "",
   calibration: null,
+  plan: NO_PLAN,
+  vision: null,
+  aiReport: null,
 };
 
 /** The examiner's live dashboard for one student: a device check, then the video call, scores,
@@ -92,6 +114,8 @@ export function ExaminerConsole({ cls, viva, student }: { cls: ClassRoom; viva: 
           suggestionsError: (m.suggestionsError as string | null) ?? null,
           engines: (m.engines as Record<string, EngineStatus>) ?? p.engines,
           llm: (m.llm as string) ?? p.llm,
+          plan: (m.plan as CopilotPlan) ?? p.plan,
+          aiReport: m.status === "ended" && p.status === "live" ? "writing" : p.aiReport,
         }));
         break;
       case "presence":
@@ -106,6 +130,7 @@ export function ExaminerConsole({ cls, viva, student }: { cls: ClassRoom; viva: 
           fps: m.fps as number,
           studentSpeaking: Boolean(m.studentSpeaking),
           status: m.status as SessionState,
+          vision: (m.vision as VisionStatus | null) ?? null,
         }));
         break;
       case "event": {
@@ -129,7 +154,11 @@ export function ExaminerConsole({ cls, viva, student }: { cls: ClassRoom; viva: 
           suggestions: (m.items as Suggestion[]) ?? p.suggestions,
           suggestionsError: (m.error as string | null) ?? null,
           suggestionsLoading: Boolean(m.loading),
+          plan: (m.plan as CopilotPlan) ?? p.plan,
         }));
+        break;
+      case "ai_report":
+        setS((p) => ({ ...p, aiReport: m.error ? { error: m.error as string } : "ready" }));
         break;
       case "calibration":
         setS((p) => ({ ...p, calibration: m.step as string }));
@@ -255,12 +284,37 @@ export function ExaminerConsole({ cls, viva, student }: { cls: ClassRoom; viva: 
         )}
       </div>
 
-      {s.status === "ended" && sessionId && <ResultForm viva={viva} sessionId={sessionId} classId={cls.id} />}
+      {s.status === "ended" && sessionId && (
+        <div className="panel flex flex-wrap items-center justify-between gap-3 rounded-2xl p-5">
+          <div>
+            <p className="font-semibold">The interview has ended</p>
+            <p className="text-sm text-muted">
+              {s.aiReport === "ready"
+                ? "The AI's report is ready. Open the report to check the marks and send the results to the student."
+                : s.aiReport && typeof s.aiReport === "object"
+                  ? `The AI couldn't write its report (${s.aiReport.error}). You can retry from the report.`
+                  : "The AI is writing its report. Open the report to give marks and send the results."}
+            </p>
+          </div>
+          <Button variant="accent" href={`/classes/${cls.id}/vivas/${viva.id}/report/${sessionId}`}>
+            Open report
+          </Button>
+        </div>
+      )}
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]">
         <div className="space-y-5">
           <div className="relative">
             <RemoteVideo stream={remote}>
+            {s.status === "live" && (
+              <span
+                className={`absolute top-3 left-3 rounded-full px-3 py-1 text-xs font-medium text-white backdrop-blur ${
+                  s.risk >= 60 ? "bg-danger/85" : s.risk >= 30 ? "bg-warning/85" : "bg-black/45"
+                }`}
+              >
+                Risk {Math.round(s.risk)}% · {s.events.length} flag{s.events.length === 1 ? "" : "s"}
+              </span>
+            )}
             {!remote && (
               <p className="absolute inset-0 grid place-items-center text-sm text-muted">
                 {s.studentOnline ? "Connecting video…" : "The student's video appears here."}
@@ -289,7 +343,7 @@ export function ExaminerConsole({ cls, viva, student }: { cls: ClassRoom; viva: 
               <MicIcon className="h-3.5 w-3.5" /> {micOn ? "Mute mic" : "Unmute mic"}
             </Button>
             <MicMeter stream={local} muted={!micOn} />
-            <span className="tabular-nums">Vision {s.fps.toFixed(1)} fps</span>
+            <ProctorStatus vision={s.vision} live={s.status === "live"} />
             {s.studentSpeaking && <Badge tone="accent">Student speaking</Badge>}
             {engineProblems.map((e) => (
               <span key={e.label} className="text-warning" title={e.detail}>
@@ -309,21 +363,22 @@ export function ExaminerConsole({ cls, viva, student }: { cls: ClassRoom; viva: 
           </div>
 
           <Section title="Transcript" description="Speech-to-text of both of you, with the Grader's notes on each answer.">
-            <div className="max-h-[32rem] overflow-y-auto pr-1">
-              <Transcript turns={s.turns} examinerName={examinerName} studentName={student.name} follow />
-            </div>
+            <Transcript turns={s.turns} examinerName={examinerName} studentName={student.name} follow />
             {s.status === "live" && (
               <Button size="sm" variant="ghost" className="mt-3" onClick={() => send({ type: "grade_now" })}>
                 Grade the current answer now
               </Button>
             )}
           </Section>
+
+          <StudentWorkPanel vivaId={viva.id} studentId={student.id} />
         </div>
 
-        <div className="space-y-5">
+        {/* Stays in view while you scroll the student's work and the transcript. */}
+        <div className="space-y-5 xl:sticky xl:top-5 xl:max-h-[calc(100vh-2.5rem)] xl:self-start xl:overflow-y-auto xl:pr-1">
           <Section
             title="Co-Pilot"
-            description="Suggested questions from the student's work and their weak points."
+            description="Follow-ups on what you just asked, one project at a time."
             actions={
               <Button size="sm" variant="ghost" disabled={s.suggestionsLoading} onClick={() => send({ type: "suggest" })}>
                 <SparkleIcon className="h-3.5 w-3.5" /> {s.suggestionsLoading ? "Thinking…" : "Refresh"}
@@ -331,6 +386,7 @@ export function ExaminerConsole({ cls, viva, student }: { cls: ClassRoom; viva: 
             }
           >
             {s.suggestionsError && <p className="mb-3 text-xs text-warning">{s.suggestionsError}</p>}
+            <ProjectPlan plan={s.plan} onFocus={(project) => send({ type: "focus", project })} />
             {s.suggestions.length === 0 ? (
               <p className="text-sm text-muted">{s.suggestionsLoading ? "Reading the student's work…" : "No suggestions yet."}</p>
             ) : (
@@ -389,122 +445,73 @@ function StatusBadge({ status, online }: { status: SessionState; online: boolean
   return <Badge tone={online ? "accent" : "neutral"}>{online ? "In waiting room" : "Not joined"}</Badge>;
 }
 
-/** After the interview: the examiner's score, per-criterion scores (pre-filled with the AI's averages) and notes. */
-function ResultForm({ viva, sessionId, classId }: { viva: Viva; sessionId: string; classId: string }) {
-  const [report, setReport] = useState<SessionReport | null>(null);
-  const [score, setScore] = useState("");
-  const [criteria, setCriteria] = useState<Record<string, string>>({});
-  const [notes, setNotes] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-
-  useEffect(() => {
-    getSessionReport(sessionId).then((r) => {
-      setReport(r);
-      setNotes(r.notes);
-      if (r.score !== null) setScore(String(r.score));
-      const given = new Map(r.criteriaScores.map((c) => [c.name, c.score]));
-      const suggested = new Map(r.suggestedCriteriaScores.map((c) => [c.name, c.score]));
-      setCriteria(
-        Object.fromEntries(
-          r.evaluationCriteria.map((c) => [c.name, String(given.get(c.name) ?? suggested.get(c.name) ?? "")]),
-        ),
-      );
-      setSaved(r.score !== null);
-    }, (e: Error) => setError(e.message));
-  }, [sessionId]);
-
-  // Weighted average of the criterion scores, as a starting point for the overall score.
-  const weighted = useMemo(() => {
-    let total = 0;
-    let weight = 0;
-    for (const c of viva.evaluationCriteria) {
-      const v = Number(criteria[c.name]);
-      if (criteria[c.name] !== "" && !Number.isNaN(v)) {
-        total += v * c.weight;
-        weight += c.weight;
-      }
-    }
-    return weight ? Math.round((total / weight) * 10) / 10 : null;
-  }, [criteria, viva.evaluationCriteria]);
-
-  async function save() {
-    setBusy(true);
-    setError(null);
-    try {
-      await saveSessionResult(sessionId, {
-        score: Number(score),
-        criteriaScores: viva.evaluationCriteria.map((c) => ({
-          name: c.name,
-          score: criteria[c.name] === "" || criteria[c.name] === undefined ? null : Number(criteria[c.name]),
-        })),
-        notes,
-      });
-      setSaved(true);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+/** What the proctoring sees right now: proof it is watching, without drawing on the video. */
+function ProctorStatus({ vision: v, live }: { vision: VisionStatus | null; live: boolean }) {
+  if (!v) {
+    return <span className={live ? "text-warning" : ""}>AI proctoring: {live ? "no video from the student" : "waiting for video"}</span>;
   }
-
-  if (!report) return error ? <FormError message={error} /> : null;
+  const faces = v.faces === 1 ? "1 face" : v.faces === 0 ? "no face" : `${v.faces} faces`;
+  const gaze = v.gaze === "away" ? "looking away" : v.gaze === "up" ? "looking up" : v.gaze === "screen" ? "eyes on screen" : null;
+  const alert = v.faces !== 1 || v.gaze === "away" || v.objects.length > 0 || (v.persons ?? 1) > 1;
   return (
-    <Section
-      title="Result"
-      description="Your decision. The AI's numbers are suggestions; flags are advisory."
-      actions={
-        <Button size="sm" variant="outline" href={`/classes/${classId}/vivas/${viva.id}/report/${sessionId}`}>
-          Open report
-        </Button>
-      }
-    >
-      <div className="grid gap-4 md:grid-cols-[1fr_2fr]">
-        <div className="space-y-3">
-          {viva.evaluationCriteria.map((c) => (
-            <label key={c.name} className="flex items-center justify-between gap-3 text-sm">
-              <span className="min-w-0 truncate">{c.name}</span>
-              <input
-                type="number"
-                min={0}
-                max={10}
-                step={0.5}
-                value={criteria[c.name] ?? ""}
-                onChange={(e) => setCriteria((x) => ({ ...x, [c.name]: e.target.value }))}
-                className={`${inputClass} w-20`}
-                aria-label={`${c.name} score out of 10`}
-              />
-            </label>
-          ))}
-          <label className="flex items-center justify-between gap-3 border-t border-border pt-3 text-sm font-semibold">
-            Overall (out of 10)
-            <input
-              type="number"
-              min={0}
-              max={10}
-              step={0.5}
-              value={score}
-              placeholder={weighted !== null ? String(weighted) : ""}
-              onChange={(e) => setScore(e.target.value)}
-              className={`${inputClass} w-20`}
-            />
-          </label>
-          {weighted !== null && score === "" && (
-            <button type="button" className="text-xs text-accent" onClick={() => setScore(String(weighted))}>
-              Use weighted average ({weighted})
+    <span className="inline-flex items-center gap-1.5">
+      <span className={`h-2 w-2 rounded-full ${alert ? "bg-warning" : "bg-success"}`} />
+      AI proctoring: {faces}
+      {gaze && ` · ${gaze}`}
+      {(v.persons ?? 0) > 1 && ` · ${v.persons} people`}
+      {v.objects.length > 0 && ` · ${v.objects.join(", ")} in view`}
+    </span>
+  );
+}
+
+/** The projects found in the student's work: which one the questions are on, which are covered, and
+ * the AI's call to move on once it has enough evidence. Click a project to move the questions there. */
+function ProjectPlan({ plan, onFocus }: { plan: CopilotPlan; onFocus: (project: string) => void }) {
+  if (!plan.projects.length && !plan.current) return null;
+  const projects = plan.projects.length ? plan.projects : [plan.current];
+  return (
+    <div className="mb-4 space-y-3">
+      <div className="flex flex-wrap gap-1.5">
+        {projects.map((p) => {
+          const covered = plan.covered.includes(p);
+          const current = p === plan.current;
+          return (
+            <button
+              key={p}
+              type="button"
+              onClick={() => onFocus(p)}
+              title={current ? "The questions are on this project" : `Move the questions to ${p}`}
+              className={`rounded-full border px-2.5 py-1 text-xs transition ${
+                current
+                  ? "border-accent bg-accent-soft font-medium text-accent"
+                  : covered
+                    ? "border-success/40 text-success"
+                    : "border-border-strong text-muted hover:bg-raised hover:text-text"
+              }`}
+            >
+              {covered && "✓ "}
+              {p}
             </button>
+          );
+        })}
+      </div>
+      {plan.enough ? (
+        <div className="rounded-xl border border-success/30 bg-success/10 p-3 text-sm">
+          <p className="font-medium text-success">Enough on {plan.current || "this project"}.</p>
+          {plan.note && <p className="mt-0.5 text-xs text-muted">{plan.note}</p>}
+          {plan.next && (
+            <p className="mt-1.5 text-xs">
+              We can move to <span className="font-medium">{plan.next}</span>: the questions below are on it.
+            </p>
           )}
         </div>
-        <TextAreaField label="Notes for the report" name="notes" rows={6} value={notes} onChange={(e) => setNotes(e.target.value)} />
-      </div>
-      <div className="mt-4 flex items-center gap-3">
-        <Button variant="accent" disabled={busy || score === ""} onClick={save}>
-          {busy ? "Saving…" : saved ? "Update result" : "Save result"}
-        </Button>
-        {saved && !busy && <span className="text-sm text-success">Saved</span>}
-        <FormError message={error} />
-      </div>
-    </Section>
+      ) : (
+        plan.note && (
+          <p className="text-xs text-muted">
+            <span className="text-text">{plan.current}:</span> {plan.note}
+          </p>
+        )
+      )}
+    </div>
   );
 }

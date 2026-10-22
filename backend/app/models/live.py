@@ -48,6 +48,8 @@ class VivaSession(Base):
     score: Mapped[float | None] = mapped_column(Float, default=None)  # out of 10
     criteria_scores: Mapped[list[dict]] = mapped_column(JSON, default=list)  # [{name, score}] out of 10
     notes: Mapped[str] = mapped_column(Text, default="")
+    # The AI's written assessment, made when the interview ends (see evaluation/report.py).
+    ai_report: Mapped[dict | None] = mapped_column(JSON, default=None)
 
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 

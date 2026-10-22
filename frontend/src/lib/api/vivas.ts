@@ -7,6 +7,7 @@ import type {
   SessionReport,
   StoredFile,
   StudentViva,
+  StudentWork,
   Viva,
   VivaAudience,
   VivaFeedback,
@@ -105,6 +106,24 @@ export function saveSessionResult(
   result: { score: number; criteriaScores: CriterionResult[]; notes: string },
 ): Promise<SessionReport> {
   return api(`/viva-sessions/${enc(sessionId)}/result`, { method: "PUT", body: result });
+}
+
+/** (Re)write the AI's report for a finished interview. */
+export function writeAiReport(sessionId: string): Promise<SessionReport> {
+  return api(`/viva-sessions/${enc(sessionId)}/ai-report`, { method: "POST" });
+}
+
+/** Send the student their marks, the AI's report and / or a message (sending again updates it). */
+export function sendToStudent(
+  sessionId: string,
+  body: { includeMarks: boolean; includeAiReport: boolean; message: string },
+): Promise<SessionReport> {
+  return api(`/viva-sessions/${enc(sessionId)}/send`, { method: "POST", body });
+}
+
+/** Staff: what the student handed in for the viva's linked assignment. */
+export function getStudentWork(vivaId: string, studentId: string): Promise<StudentWork> {
+  return api(`/vivas/${enc(vivaId)}/students/${enc(studentId)}/work`);
 }
 
 export function getEngineStatus(): Promise<Record<string, EngineStatus>> {

@@ -140,7 +140,11 @@ export function AnswerNotes({ a }: { a: AnswerAnalysis }) {
   );
 }
 
-/** The dialogue, with the Grader's notes under each graded answer. */
+/**
+ * The dialogue, with the Grader's notes under each graded answer. Live (`follow`), it is a fixed-height
+ * box like a live-stream chat: new lines scroll the box itself (never the page), and only while you are
+ * at the bottom, so you can scroll back to read without being pulled down.
+ */
 export function Transcript({
   turns,
   examinerName,
@@ -150,14 +154,18 @@ export function Transcript({
   turns: Turn[];
   examinerName: string;
   studentName: string;
-  follow?: boolean; // keep the newest line in view (live)
+  follow?: boolean;
 }) {
-  const end = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  const atBottom = useRef(true);
   useEffect(() => {
-    if (follow) end.current?.scrollIntoView({ block: "nearest" });
-  }, [turns.length, follow]);
-  if (!turns.length) return <p className="text-sm text-muted">The transcript appears here as people speak.</p>;
-  return (
+    const el = box.current;
+    if (follow && el && atBottom.current) el.scrollTop = el.scrollHeight;
+  }, [turns, follow]);
+
+  const list = !turns.length ? (
+    <p className="text-sm text-muted">The transcript appears here as people speak.</p>
+  ) : (
     <ol className="space-y-3">
       {turns.map((t) => (
         <li key={t.id} className="text-sm">
@@ -172,7 +180,19 @@ export function Transcript({
           {t.speaker === "student" && t.analysis && !t.analysis.typed && <AnswerNotes a={t.analysis} />}
         </li>
       ))}
-      <div ref={end} />
     </ol>
+  );
+  if (!follow) return list;
+  return (
+    <div
+      ref={box}
+      onScroll={(e) => {
+        const el = e.currentTarget;
+        atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+      }}
+      className="h-[22rem] overflow-y-auto overscroll-contain pr-1"
+    >
+      {list}
+    </div>
   );
 }

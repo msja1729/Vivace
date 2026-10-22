@@ -214,6 +214,37 @@ export interface VivaFeedback {
   feedback: string;
   files: StoredFile[];
   releasedAt: string | null;
+  marks?: ReleasedMarks | null; // sent with the result: overall + per-criterion breakdown
+  aiReport?: AiReport | null; // the AI's report, as sent
+}
+
+export interface ReleasedMarks {
+  score: number;
+  outOf: number;
+  criteria: { name: string; weight: number | null; score: number | null }[];
+}
+
+export type Understanding = "strong" | "partial" | "weak" | "not_demonstrated";
+
+/** The AI's written assessment of one viva (backend: live/evaluation/report.py). */
+export interface AiReport {
+  verdict: "strong" | "good" | "partial" | "weak" | "insufficient_evidence";
+  summary: string;
+  projects: { name: string; understanding: Understanding; comment: string; evidence: string }[];
+  criteria: { name: string; score: number | null; comment: string }[];
+  strengths: string[];
+  gaps: string[];
+  claimsVsShown: string[];
+  nextSteps: string[];
+}
+
+/** What a student handed in for the viva's linked assignment. */
+export interface StudentWork {
+  assignmentTitle: string | null;
+  submittedAt: string | null;
+  files: StoredFile[];
+  links: string[];
+  note: string;
 }
 
 /** What a student sees of a viva: timing and their own status / feedback. */
@@ -364,13 +395,34 @@ export interface SessionReport {
   calibrated: boolean;
   events: IntegrityEvent[];
   turns: Turn[];
+  qa: { question: string; answer: string }[];
+  aiReport: AiReport | null;
+  sentToStudent: VivaFeedback | null;
 }
 
 export interface Suggestion {
   question: string;
-  kind: "opening" | "follow_up" | "devils_advocate";
+  kind: "opening" | "follow_up" | "deeper" | "devils_advocate" | "cross_project" | "new_project";
   why: string;
   criterion: string;
+}
+
+/** The Co-Pilot's view of the interview, project by project. */
+export interface CopilotPlan {
+  projects: string[];
+  current: string;
+  covered: string[];
+  enough: boolean; // enough evidence on `current`: time to move to `next`
+  note: string;
+  next: string;
+}
+
+/** What the proctoring sees right now (null = no recent frames from the student). */
+export interface VisionStatus {
+  faces: number;
+  persons: number | null;
+  gaze: "screen" | "away" | "up" | null;
+  objects: string[];
 }
 
 export interface EngineStatus {

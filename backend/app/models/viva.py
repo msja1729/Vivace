@@ -106,6 +106,11 @@ class VivaFeedback(Base):
     student_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     feedback: Mapped[str] = mapped_column(Text, default="")
     released_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    # Copies taken when sent, so later edits don't change what the student was given.
+    marks: Mapped[dict | None] = mapped_column(
+        JSON, default=None
+    )  # {score, outOf, criteria: [{name, score}]}
+    ai_report: Mapped[dict | None] = mapped_column(JSON, default=None)
 
     files: Mapped[list[StoredFile]] = relationship(cascade="all, delete-orphan")
 

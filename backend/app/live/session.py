@@ -27,6 +27,7 @@ from app.live.config import live_config
 from app.live.engines import status as engine_status
 from app.live.evaluation import agents, metrics
 from app.live.evaluation import context as ctx
+from app.live.evaluation import report as ai_report
 from app.live.evaluation.llm import LLMError, get_llm, llm_error
 from app.live.integrity import audio
 from app.live.integrity.rules import LABELS, Change, Flag, IntegrityMonitor
@@ -86,6 +87,17 @@ class LiveSession:
         self.state: agents.ExamState | None = None
         self.suggestions: list[dict] = []
         self.suggestions_error: str | None = None
+        # The Co-Pilot's view of the interview, project by project (see agents.Plan).
+        self.plan: dict = {
+            "projects": [],
+            "current": "",
+            "covered": [],
+            "enough": False,
+            "note": "",
+            "next": "",
+        }
+        self.focus = ""  # a project the examiner chose to move to
+        self._answer_last_end: float | None = None  # when the student's latest answer turn ended
         self.last_grade: agents.Grade | None = None
         self.answer = _Answer()
         self.risk = 0.0
@@ -204,6 +216,7 @@ class LiveSession:
                 "turns": [_turn_out(t) for t in s.turns],
                 "suggestions": self.suggestions,
                 "suggestionsError": self.suggestions_error,
+                "plan": self.plan,
             }
 
     async def on_text(self, who: str, msg: dict) -> None:
@@ -223,6 +236,10 @@ class LiveSession:
             elif kind == "show_question":
                 await self._show_question(str(msg.get("text", ""))[:1000])
             elif kind == "suggest":
+                asyncio.create_task(self.refresh_suggestions())
+            elif kind == "focus":
+                # The examiner moves on to another project: suggestions follow it.
+                self.focus = str(msg.get("project", ""))[:200]
                 asyncio.create_task(self.refresh_suggestions())
             elif kind == "grade_now":
                 asyncio.create_task(self._grade(self._take_answer()))
@@ -268,6 +285,20 @@ class LiveSession:
         self.status = SessionStatus.ended
         await self.send("student", {"type": "ended"})
         await self.to_examiner(self.snapshot_state("examiner"))
+        asyncio.create_task(self._write_report())
+
+    async def _write_report(self) -> None:
+        """The AI's written report, ready for the examiner shortly after the interview ends."""
+        llm = get_llm()
+        if llm is None:
+            return
+        try:
+            report = await ai_report.generate(self.id, db_factory, llm)
+            await self.to_examiner({"type": "ai_report", "report": report})
+        except (LLMError, ValueError) as exc:
+            await self.to_examiner({"type": "ai_report", "error": str(exc)})
+        except Exception:  # noqa: BLE001
+            log.exception("Writing the AI report failed")
 
     async def _show_question(self, text: str) -> None:
         if not text.strip():
@@ -456,6 +487,7 @@ class LiveSession:
             self.answer.question = f"{self.answer.question} {text}".strip()
             self.answer.question_end = end
         else:
+            self._answer_last_end = end
             a = self.answer
             if a.start is None:
                 a.start = start
@@ -558,15 +590,32 @@ class LiveSession:
         self._suggesting = True
         await self.to_examiner({"type": "suggestions", "items": self.suggestions, "loading": True})
         try:
-            items = await agents.suggest(llm, self.state, self.last_grade)
-            self.suggestions = [s.model_dump() for s in items]
+            covered = self.plan["covered"]
+            plan = await agents.suggest(llm, self.state, self.last_grade, covered, self.focus)
+            if plan.enough_evidence and plan.current_project and plan.current_project not in covered:
+                covered = [*covered, plan.current_project]
+            self.plan = {
+                "projects": plan.projects or self.plan["projects"],
+                "current": self.focus or plan.current_project,
+                "covered": covered,
+                "enough": plan.enough_evidence,
+                "note": plan.coverage_note,
+                "next": plan.next_project,
+            }
+            self.focus = ""
+            self.suggestions = [s.model_dump() for s in plan.suggestions]
             self.suggestions_error = None
         except (LLMError, ValueError) as exc:
             self.suggestions_error = str(exc)
         finally:
             self._suggesting = False
         await self.to_examiner(
-            {"type": "suggestions", "items": self.suggestions, "error": self.suggestions_error}
+            {
+                "type": "suggestions",
+                "items": self.suggestions,
+                "error": self.suggestions_error,
+                "plan": self.plan,
+            }
         )
 
     # ---------- aggregator ----------
@@ -580,6 +629,15 @@ class LiveSession:
             t = self.t()
             if self.status == SessionStatus.live:
                 self.risk = self.monitor.risk(t)
+                # The student finished answering (quiet for a moment): grade it now, so fresh follow-up
+                # suggestions are ready before the examiner asks the next question.
+                if (
+                    self.answer.turn_ids
+                    and self._answer_last_end is not None
+                    and not self.segmenters[Speaker.student].speaking
+                    and t - self._answer_last_end >= 2.5
+                ):
+                    asyncio.create_task(self._grade(self._take_answer(keep_question=True)))
                 if n % 5 == 0:
                     with db_factory() as db:
                         s = self._row(db)
@@ -595,8 +653,24 @@ class LiveSession:
                     "studentSpeaking": self.segmenters[Speaker.student].speaking,
                     "examinerSpeaking": self.segmenters[Speaker.examiner].speaking,
                     "status": self.status.value,
+                    "vision": self._vision_status(),
                 }
             )
+
+    def _vision_status(self) -> dict | None:
+        """What the proctoring sees right now, for the examiner's status line (no video overlay)."""
+        o = self.last_obs
+        if o is None or not self._frames_done or self._frames_done[-1] < time.time() - 3:
+            return None  # no recent frames from the student
+        gaze = None
+        if o.faces == 1 and o.eye_x is not None:
+            bx, by = self.monitor.bounds["eye_x"], self.monitor.bounds["eye_y"]
+            if not (bx[0] <= o.eye_x <= bx[1]) or o.eye_y < by[0]:
+                gaze = "away"
+            else:
+                gaze = "up" if o.eye_y > by[1] else "screen"
+        objects = sorted({x["label"] for x in o.objects if x["label"] != "person"})
+        return {"faces": o.faces, "persons": o.persons, "gaze": gaze, "objects": objects}
 
 
 def _event_out(e: VivaEvent) -> dict:

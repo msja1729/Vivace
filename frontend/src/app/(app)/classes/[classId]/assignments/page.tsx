@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { isStaff, type ClassRoom } from "@/types";
-import { listAssignments } from "@/lib/api/assignments";
+import { deleteAssignment, listAssignments } from "@/lib/api/assignments";
 import { formatDateTime, fromNow } from "@/lib/format";
 import { useLoad } from "@/lib/useLoad";
 import { ClassPage } from "@/components/classes/ClassPage";
@@ -11,8 +11,9 @@ import { StudentAssignments } from "@/components/student/StudentAssignments";
 import { SubmissionProgress } from "@/components/assignments/SubmissionProgress";
 import { Button } from "@/components/ui/Button";
 import { Badge, EmptyState, Loading, PageHeader } from "@/components/ui/Display";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { FormError } from "@/components/ui/Field";
-import { ClipboardIcon, PlusIcon } from "@/components/ui/Icons";
+import { ClipboardIcon, PlusIcon, TrashIcon } from "@/components/ui/Icons";
 import { SearchInput, matches } from "@/components/ui/SearchInput";
 
 export default function AssignmentsPage() {
@@ -20,7 +21,18 @@ export default function AssignmentsPage() {
 }
 
 function Assignments({ cls }: { cls: ClassRoom }) {
-  const { data, error } = useLoad(() => listAssignments(cls.id), cls.id);
+  const { data, error, setData } = useLoad(() => listAssignments(cls.id), cls.id);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  async function remove(id: string, title: string) {
+    setDeleteError(null);
+    try {
+      await deleteAssignment(id);
+      setData((data ?? []).filter((x) => x.id !== id));
+    } catch (err) {
+      setDeleteError(`${title}: ${(err as Error).message}`);
+    }
+  }
   const base = `/classes/${cls.id}/assignments`;
   const [query, setQuery] = useState("");
   const shown = data?.filter((a) => matches(query, a.title, a.instructions)) ?? [];
@@ -38,6 +50,7 @@ function Assignments({ cls }: { cls: ClassRoom }) {
         }
       />
       <FormError message={error} />
+      <FormError message={deleteError} />
 
       {data === undefined ? (
         !error && <Loading />
@@ -54,8 +67,11 @@ function Assignments({ cls }: { cls: ClassRoom }) {
         {shown.length === 0 && <p className="py-6 text-center text-sm text-muted">No assignments match “{query}”.</p>}
         <ul className="space-y-3">
           {shown.map((a) => (
-            <li key={a.id}>
-              <Link href={`${base}/${a.id}`} className="panel block rounded-xl p-5 transition hover:border-border-strong hover:bg-raised">
+            <li key={a.id} className="relative">
+              <div className="absolute top-4 right-4 z-10">
+                <ConfirmButton size="sm" label="" icon={<TrashIcon />} onConfirm={() => remove(a.id, a.title)} />
+              </div>
+              <Link href={`${base}/${a.id}`} className="panel block rounded-xl p-5 pr-24 transition hover:border-border-strong hover:bg-raised">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-semibold">{a.title}</p>

@@ -4,6 +4,7 @@ from fastapi import UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core import storage
 from app.core.config import get_settings
 from app.core.db import utcnow
 from app.core.errors import BadRequest, Conflict, Forbidden, NotFound
@@ -33,6 +34,7 @@ from app.schemas.viva import (
     ExaminerOut,
     SlotOut,
     StudentVivaOut,
+    StudentWorkOut,
     VivaCreateIn,
     VivaFeedbackOut,
     VivaJoinOut,
@@ -350,10 +352,18 @@ def unschedule(db: Session, viva_id: str, user: User) -> VivaOut:
 
 def delete(db: Session, viva_id: str, user: User) -> None:
     v = owned_viva(db, viva_id, user)
-    if phase(v) == "live":
-        raise Conflict("This viva is running right now and can't be deleted.")
+    running = db.scalar(
+        select(VivaSession).where(VivaSession.viva_id == v.id, VivaSession.status == SessionStatus.live)
+    )
+    if running is not None:
+        raise Conflict("An interview in this viva is running right now. End it before deleting the viva.")
     for f in list(v.files) + [f for fb in v.feedback for f in fb.files]:
         files.remove(db, f)
+    # Integrity snapshots of its sessions (the session rows themselves go with the viva).
+    for s in db.scalars(select(VivaSession).where(VivaSession.viva_id == v.id)):
+        for e in s.events:
+            if e.snapshot_key:
+                storage.delete(e.snapshot_key)
     db.delete(v)
     db.commit()
 
@@ -513,12 +523,35 @@ def join(db: Session, viva_id: str, user: User) -> VivaJoinOut:
     return VivaJoinOut(viva_id=v.id, joined_at=attempt.joined_at, ends_at=ends)
 
 
+# ---------- The student's work, for the live room ----------
+
+
+def student_work(db: Session, viva_id: str, student_id: str, user: User) -> StudentWorkOut:
+    """Staff: the files and links the student handed in for the viva's linked assignment."""
+    v = owned_viva(db, viva_id, user)
+    title = v.assignment.title if v.assignment else None
+    sub = submissions_by_student(db, v.assignment_id).get(student_id) if v.assignment_id else None
+    if sub is None:
+        return StudentWorkOut(assignment_title=title, submitted_at=None, files=[], links=[], note="")
+    return StudentWorkOut(
+        assignment_title=title,
+        submitted_at=sub.submitted_at,
+        files=[files.to_out(f) for f in sub.files if f.kind != FileKind.feedback],
+        links=list(sub.github_links),
+        note=sub.note,
+    )
+
+
 # ---------- Feedback / report per student ----------
 
 
 def _feedback_out(fb: VivaFeedback) -> VivaFeedbackOut:
     return VivaFeedbackOut(
-        feedback=fb.feedback, files=[files.to_out(f) for f in fb.files], released_at=fb.released_at
+        feedback=fb.feedback,
+        files=[files.to_out(f) for f in fb.files],
+        released_at=fb.released_at,
+        marks=fb.marks,
+        ai_report=fb.ai_report,
     )
 
 

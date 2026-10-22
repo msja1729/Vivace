@@ -10,11 +10,12 @@ import { useLoad } from "@/lib/useLoad";
 import { formatCountdown, useNow } from "@/lib/useNow";
 import { FileChip } from "@/components/files/FileChip";
 import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
+import { Card, Section } from "@/components/ui/Card";
 import { Loading, StatTile } from "@/components/ui/Display";
 import { FormError } from "@/components/ui/Field";
 import { ChevronLeftIcon, MicIcon } from "@/components/ui/Icons";
 import { StudentLiveRoom } from "@/components/live/StudentLiveRoom";
+import { AiReportView, MarksView } from "@/components/live/ReportParts";
 import { VivaStatusBadge, liveStatus } from "./StudentVivas";
 
 /** One viva for a student: when it opens, the Join button (5-minute window), the viva room, and feedback. */
@@ -100,20 +101,32 @@ export function StudentVivaDetail({ cls }: { cls: ClassRoom }) {
       )}
 
       {v.feedback && (
-        <section className="rounded-xl border border-success/25 bg-success/[0.06] p-5">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="font-semibold text-success">Feedback from your instructor</h2>
-            {v.feedback.releasedAt && <span className="text-xs text-muted">{formatDateTime(v.feedback.releasedAt)}</span>}
-          </div>
-          {v.feedback.feedback && <p className="mt-3 text-sm whitespace-pre-line">{v.feedback.feedback}</p>}
-          {v.feedback.files.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {v.feedback.files.map((f) => (
-                <FileChip key={f.id} file={f} />
-              ))}
+        <div className="space-y-5">
+          <section className="rounded-2xl border border-success/25 bg-success/[0.06] p-5">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="font-semibold text-success">Your results</h2>
+              {v.feedback.releasedAt && <span className="text-xs text-muted">Sent {formatDateTime(v.feedback.releasedAt)}</span>}
             </div>
+            {v.feedback.feedback && <p className="mt-3 text-sm whitespace-pre-line">{v.feedback.feedback}</p>}
+            {v.feedback.files.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {v.feedback.files.map((f) => (
+                  <FileChip key={f.id} file={f} />
+                ))}
+              </div>
+            )}
+          </section>
+          {v.feedback.marks && (
+            <Section title="Marks" description="Out of 10 per criterion, and overall.">
+              <MarksView marks={v.feedback.marks} />
+            </Section>
           )}
-        </section>
+          {v.feedback.aiReport && (
+            <Section title="Assessment" description="Written by the AI from your interview, shared by your examiner.">
+              <AiReportView report={v.feedback.aiReport} />
+            </Section>
+          )}
+        </div>
       )}
     </div>
   );

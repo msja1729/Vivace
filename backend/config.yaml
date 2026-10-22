@@ -3,8 +3,8 @@
 
 vision:
   fps: 5                    # frames per second the student's browser sends for analysis
-  yolo_imgsz: 320           # smaller = faster object detection on CPU
-  yolo_conf: 0.5
+  yolo_imgsz: 480           # the frames' own width: small objects like phones stay visible (~15 ms on CPU)
+  yolo_conf: 0.45           # objects must also show in 3 of 5 frames, so this can be a little lower
 
 integrity:
   gaze_off_seconds: 3       # looking off-screen (sideways / down) longer than this is flagged

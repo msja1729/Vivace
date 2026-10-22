@@ -75,20 +75,19 @@ function VivaView({ cls, viva, onChange }: { cls: ClassRoom; viva: Viva; onChang
               )}
             </p>
           </div>
-          {viva.phase !== "live" && (
-            <ConfirmButton
-              label="Delete viva"
-              icon={<TrashIcon />}
-              onConfirm={async () => {
-                try {
-                  await deleteViva(viva.id);
-                  router.push(`/classes/${cls.id}/vivas`);
-                } catch (err) {
-                  setDeleteError((err as Error).message);
-                }
-              }}
-            />
-          )}
+          {/* The server refuses while an interview in it is actually running. */}
+          <ConfirmButton
+            label="Delete viva"
+            icon={<TrashIcon />}
+            onConfirm={async () => {
+              try {
+                await deleteViva(viva.id);
+                router.push(`/classes/${cls.id}/vivas`);
+              } catch (err) {
+                setDeleteError((err as Error).message);
+              }
+            }}
+          />
         </div>
         <div className="mt-3">
           <FormError message={deleteError} />

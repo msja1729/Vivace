@@ -25,7 +25,7 @@ export function liveStatus(v: StudentViva, now: number): StudentViva["myStatus"]
 }
 
 export function VivaStatusBadge({ status, hasFeedback }: { status: StudentViva["myStatus"]; hasFeedback: boolean }) {
-  if (hasFeedback) return <Badge tone="success">Feedback ready</Badge>;
+  if (hasFeedback) return <Badge tone="success">Results ready</Badge>;
   switch (status) {
     case "open":
       return <Badge tone="success">Open now</Badge>;

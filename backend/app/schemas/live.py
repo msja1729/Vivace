@@ -5,7 +5,7 @@ from pydantic import Field
 
 from app.schemas.base import ApiModel
 from app.schemas.classroom import PersonOut
-from app.schemas.viva import Criterion
+from app.schemas.viva import Criterion, VivaFeedbackOut
 
 SessionState = Literal["waiting", "live", "ended"]
 
@@ -46,6 +46,19 @@ class ResultIn(ApiModel):
     score: float = Field(ge=0, le=10)
     criteria_scores: list[CriterionResult] = Field(default_factory=list, max_length=20)
     notes: str = Field(default="", max_length=20000)
+
+
+class ReleaseIn(ApiModel):
+    """What to send the student: the marks, the AI's report and / or a message."""
+
+    include_marks: bool = True
+    include_ai_report: bool = True
+    message: str = Field(default="", max_length=20000)
+
+
+class QAOut(ApiModel):
+    question: str
+    answer: str
 
 
 class EventOut(ApiModel):
@@ -93,3 +106,6 @@ class SessionReportOut(ApiModel):
     calibrated: bool
     events: list[EventOut]
     turns: list[TurnOut]
+    qa: list[QAOut]  # each question with the student's answer, straight from the transcript
+    ai_report: dict | None  # the AI's written assessment (see live/evaluation/report.py)
+    sent_to_student: VivaFeedbackOut | None  # what the student has been sent, if anything

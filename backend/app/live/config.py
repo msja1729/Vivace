@@ -10,8 +10,8 @@ from app.core.config import get_settings
 
 class VisionConfig(BaseModel):
     fps: int = 5
-    yolo_imgsz: int = 320
-    yolo_conf: float = 0.5
+    yolo_imgsz: int = 480
+    yolo_conf: float = 0.45
 
 
 class IntegrityConfig(BaseModel):

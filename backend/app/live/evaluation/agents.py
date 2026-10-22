@@ -1,11 +1,11 @@
-"""The Socratic agents. Each is one LLM call with its own system prompt over a shared exam state.
+"""The agents. Each is one LLM call with its own system prompt over a shared exam state.
 
-- Examiner: opening questions, topic by topic, from the student's work and the instructions.
-- Devil's Advocate: when an answer is shallow or textbook-like, a counter-scenario or a planted flaw.
 - Grader: scores one answer against the evidence and lists weak points.
+- Co-Pilot: suggests the examiner's next questions, one project at a time: follow-ups on the topic the
+  examiner just asked about, probing questions when an answer is shallow, and, once there is enough
+  evidence on a project, the move to the next one (with cross-project questions later on).
 
-In a staff-run viva the Examiner and Devil's Advocate don't speak to the student: their questions are
-suggestions in the examiner's Co-Pilot panel, and the human decides what to ask."""
+The human examiner decides what to ask; the Co-Pilot's questions are only suggestions."""
 
 from dataclasses import dataclass, field
 
@@ -145,89 +145,111 @@ async def grade(llm: LLM, state: ExamState, question: str, answer: str) -> Grade
     return g
 
 
-# ---------- Examiner + Devil's Advocate (the Co-Pilot) ----------
+# ---------- The Co-Pilot: suggested questions, one project at a time ----------
+
+
+KINDS = ["opening", "follow_up", "deeper", "devils_advocate", "cross_project", "new_project"]
 
 
 class Suggestion(BaseModel):
     question: str
-    kind: str  # opening | follow_up | devils_advocate
+    kind: str  # one of KINDS
     why: str
     criterion: str
 
 
-SUGGESTIONS_SCHEMA = {
+class Plan(BaseModel):
+    """Where the interview stands, project by project, plus the next questions to ask."""
+
+    projects: list[str]  # the student's projects / main topics, from their submitted work
+    current_project: str  # the project the conversation is on now
+    enough_evidence: bool  # enough answers to judge the student on current_project
+    coverage_note: str  # one line: what has been established, or what is still missing
+    next_project: str  # when enough_evidence: the project to move to ("" if none left)
+    suggestions: list[Suggestion]
+
+
+PLAN_SCHEMA = {
     "type": "object",
     "properties": {
+        "projects": {"type": "array", "items": {"type": "string"}, "description": "short project names"},
+        "current_project": {"type": "string"},
+        "enough_evidence": {"type": "boolean"},
+        "coverage_note": {"type": "string", "description": "one short line"},
+        "next_project": {"type": "string"},
         "suggestions": {
             "type": "array",
             "items": {
                 "type": "object",
                 "properties": {
                     "question": {"type": "string", "description": "one short spoken question"},
-                    "kind": {"type": "string", "enum": ["opening", "follow_up", "devils_advocate"]},
+                    "kind": {"type": "string", "enum": KINDS},
                     "why": {"type": "string", "description": "one line: what this tests"},
                     "criterion": {"type": "string", "description": "the evaluation criterion it targets"},
                 },
                 "required": ["question", "kind", "why", "criterion"],
                 "additionalProperties": False,
             },
-        }
+        },
     },
-    "required": ["suggestions"],
+    "required": [
+        "projects",
+        "current_project",
+        "enough_evidence",
+        "coverage_note",
+        "next_project",
+        "suggestions",
+    ],
     "additionalProperties": False,
 }
 
-EXAMINER_SYSTEM = """You are the Examiner agent, assisting a human examiner who is running a live oral viva. \
-You suggest the questions; the human chooses what to ask. Questions are spoken aloud, so keep each to one or two \
-short sentences. Ground them in the student's own submitted work and the instructor's instructions. Never give \
-away the answer inside the question. Follow the instructor's instructions over your own preferences.
+COPILOT_SYSTEM = """You are the Co-Pilot of a human examiner running a live oral viva about the student's own projects. You suggest the next questions; the examiner decides what to ask (often their own question). Questions are spoken aloud: one or two short sentences each, and never give the answer away.
+
+How the interview flows, one project at a time:
+1. Follow the examiner. Stay on the topic of the examiner's most recent question and the student's answer to it: dig into what the student just said (kind=follow_up), or into another part of the SAME project (kind=deeper): design choices and why, alternatives, how a key part works, failure cases, testing, results.
+2. If the last answer was shallow, vague or sounded memorised, include a probing question (kind=devils_advocate): a counter-scenario, a change to their design, or a statement with a subtle flaw for them to catch (never say so).
+3. After each answer, decide whether you now have enough evidence to judge how well the student understands the current project (usually 4-6 substantive answers that covered design, implementation and trade-offs; fewer if the answers clearly show strong or clearly weak understanding). If so: enough_evidence=true, say why in coverage_note, set next_project to a project not covered yet, and make the suggestions opening questions on next_project (kind=new_project).
+4. Once at least one project has been covered, you may add one question that connects concepts across projects (kind=cross_project), e.g. comparing two design decisions or reusing an idea from one project in another.
+5. Before the first question, suggest opening questions on the student's main project (kind=opening).
+Follow the instructor's instructions over your own preferences.
 
 """
 
-DEVIL_SYSTEM = """You are the Devil's Advocate agent in a live oral viva, assisting a human examiner. The student's \
-last answer was shallow or sounded memorised. Suggest questions that test whether they really understand: a \
-counter-scenario ("what if the data were ten times larger?"), a change to their own design and its consequences, \
-or a confident statement with a planted flaw that the student should catch. Keep each question short and spoken. \
-Never reveal that a flaw is planted.
 
-"""
-
-
-async def suggest(llm: LLM, state: ExamState, last_grade: Grade | None, count: int = 3) -> list[Suggestion]:
-    """Opening questions before the first answer; follow-ups after. Devil's Advocate takes over
-    when the last answer was shallow or recited."""
+async def suggest(
+    llm: LLM,
+    state: ExamState,
+    last_grade: Grade | None,
+    covered: list[str],
+    focus: str = "",
+    count: int = 3,
+) -> Plan:
+    """The next questions, staying on the current project until there is enough evidence to grade it."""
     shallow = last_grade is not None and (last_grade.memorization_flag or last_grade.depth < 0.5)
+    notes = [f"Projects already covered (enough evidence): {', '.join(covered) or 'none yet'}."]
+    if focus:
+        notes.append(f"The examiner chose to move to this project now: {focus}. Suggest questions about it.")
+    if last_grade is not None:
+        quality = "shallow or memorised" if shallow else "substantive"
+        weak = "; ".join(last_grade.weak_points) or "none"
+        notes.append(f"The last answer was {quality}. Its weak points: {weak}.")
     if not state.transcript:
-        system, ask = (
-            EXAMINER_SYSTEM,
-            (
-                f"Suggest {count} opening questions (kind=opening) on different topics from the student's work, "
-                "covering different evaluation criteria."
-            ),
-        )
-        query = state.context.brief[:500]
-    elif shallow:
-        system, ask = (
-            DEVIL_SYSTEM,
-            (
-                f"Suggest {count} questions: at least two of kind=devils_advocate, the rest follow_up. "
-                f"Weak points in the last answer: {'; '.join(last_grade.weak_points) or 'shallow / recited'}."
-            ),
-        )
-        query = state.transcript[-1][1]
-    else:
-        open_points = "; ".join(state.weak_points[-6:]) or "none recorded"
-        system, ask = (
-            EXAMINER_SYSTEM,
-            (
-                f"Suggest {count} next questions: follow_up on open weak points ({open_points}), or opening "
-                "questions on a topic or criterion not yet covered. Don't repeat questions already asked."
-            ),
-        )
-        query = " ".join(t for _, t in state.transcript[-4:])
+        notes.append("The interview hasn't started: suggest opening questions.")
+    query = " ".join(t for _, t in state.transcript[-4:]) or state.context.brief[:500]
     prompt = (
-        f"{ask}\n\nDialogue so far:\n{state.dialogue()}\n\n"
+        f"Suggest {count} questions.\n" + "\n".join(notes) + f"\n\nDialogue so far:\n{state.dialogue()}\n\n"
         f"Relevant passages from the student's work and the course:\n{_evidence(state, query)}"
     )
-    data = await llm.json(system + state.system_brief(), prompt, SUGGESTIONS_SCHEMA, max_tokens=3000)
-    return [Suggestion.model_validate(s) for s in data.get("suggestions", [])][: count + 1]
+    data = await llm.json(COPILOT_SYSTEM + state.system_brief(), prompt, PLAN_SCHEMA, max_tokens=3000)
+    items = [Suggestion.model_validate(x) for x in data.get("suggestions", [])][: count + 1]
+    for item in items:
+        if item.kind not in KINDS:
+            item.kind = "follow_up"
+    return Plan(
+        projects=[str(x) for x in data.get("projects", [])][:12],
+        current_project=str(data.get("current_project", "")),
+        enough_evidence=bool(data.get("enough_evidence", False)),
+        coverage_note=str(data.get("coverage_note", "")),
+        next_project=str(data.get("next_project", "")),
+        suggestions=items,
+    )

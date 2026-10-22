@@ -117,6 +117,18 @@ class VivaFeedbackOut(ApiModel):
     feedback: str
     files: list[FileOut]
     released_at: datetime | None
+    marks: dict | None = None  # {score, outOf, criteria: [{name, weight, score}]}, as sent
+    ai_report: dict | None = None  # the AI's report, as sent
+
+
+class StudentWorkOut(ApiModel):
+    """What a student handed in for the viva's linked assignment (for the examiner's live room)."""
+
+    assignment_title: str | None  # None: the viva has no linked assignment
+    submitted_at: datetime | None  # None: nothing handed in
+    files: list[FileOut]
+    links: list[str]
+    note: str
 
 
 class VivaStudentRow(ApiModel):

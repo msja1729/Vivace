@@ -1,7 +1,8 @@
 // Class files: student submissions, viva instructions and shared material. See backend/app/api/routes/files.py.
 
 import type { StoredFile } from "@/types";
-import { api } from "./client";
+import { readSession } from "@/lib/auth/session";
+import { api, API_URL, ApiError } from "./client";
 
 export { downloadFile } from "./client";
 
@@ -17,4 +18,14 @@ export function uploadMaterial(classId: string, files: File[]): Promise<StoredFi
 
 export function deleteFile(id: string): Promise<void> {
   return api(`/files/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/** A file as an object URL, to show it in the page (it needs the login token). Revoke it when done. */
+export async function fileObjectUrl(id: string): Promise<string> {
+  const token = readSession()?.token;
+  const res = await fetch(`${API_URL}/files/${encodeURIComponent(id)}/download`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new ApiError("Couldn't open the file.", res.status);
+  return URL.createObjectURL(await res.blob());
 }
