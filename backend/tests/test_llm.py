@@ -15,7 +15,9 @@ SCHEMA = {"type": "object", "properties": {"score": {"type": "number"}}, "requir
 
 def gemini(monkeypatch, handler) -> tuple[GeminiLLM, list[dict]]:
     monkeypatch.setattr(get_settings(), "gemini_api_key", "test-key")
-    model = GeminiLLM()
+    monkeypatch.setattr(get_settings(), "gemini_model", "main-model")
+    monkeypatch.setattr(get_settings(), "gemini_fallback_models", ["backup-model"])
+    model = GeminiLLM(retry_delay=0)
     sent: list[dict] = []
 
     def record(request: httpx.Request) -> httpx.Response:
@@ -60,6 +62,7 @@ def test_gemini_falls_back_when_the_model_has_no_schema_support(monkeypatch):
     ("response", "message"),
     [
         (httpx.Response(429, text="quota"), "free-tier limit"),
+        (httpx.Response(503, text="high demand"), "busy"),
         (httpx.Response(403, text="denied"), "key missing or invalid"),
         (httpx.Response(404, text="no such model"), "GEMINI_MODEL"),
         (reply("", "SAFETY"), "declined"),
@@ -80,3 +83,22 @@ def test_provider_setting_picks_gemini(monkeypatch):
     monkeypatch.setattr(llm_mod, "_error", None)
     assert llm_mod.get_llm() is None
     assert "GEMINI_API_KEY" in llm_mod.llm_error()
+
+
+def test_gemini_retries_a_busy_model_once(monkeypatch):
+    model, sent = gemini(monkeypatch, lambda req, n: httpx.Response(503) if n == 1 else reply('{"score": 5}'))
+    assert asyncio.run(model.json("system", "prompt", SCHEMA)) == {"score": 5}
+    assert len(sent) == 2
+
+
+@pytest.mark.parametrize("status", [503, 429, 404])
+def test_gemini_moves_on_to_the_backup_model(monkeypatch, status):
+    urls = []
+
+    def handler(req, n):
+        urls.append(str(req.url))
+        return reply('{"score": 9}') if "backup-model" in str(req.url) else httpx.Response(status)
+
+    model, _ = gemini(monkeypatch, handler)
+    assert asyncio.run(model.json("system", "prompt", SCHEMA)) == {"score": 9}
+    assert "main-model" in urls[0] and "backup-model" in urls[-1]

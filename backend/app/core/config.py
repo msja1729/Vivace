@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""  # empty = the SDK's own lookup (env var or `ant auth login`)
     gemini_api_key: str = ""
     gemini_model: str = "gemini-flash-latest"  # or a fixed model ID from aistudio.google.com
+    # Tried in order when the main model is busy or out of free quota (JSON list).
+    gemini_fallback_models: list[str] = ["gemini-2.5-flash"]
     llm_model: str = "claude-sonnet-5-5"
     llm_effort: Literal["low", "medium", "high"] = "medium"
     whisper_model: str = "base.en"  # faster-whisper size: tiny.en, base.en, small.en, medium.en …

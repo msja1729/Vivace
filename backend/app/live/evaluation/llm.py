@@ -1,6 +1,7 @@
 """The LLM behind the Grader and Co-Pilot, kept behind one small interface so it can be swapped
 without touching the agents. LLM_PROVIDER picks Claude (default) or Google Gemini."""
 
+import asyncio
 import json
 import logging
 from typing import Protocol
@@ -74,10 +75,16 @@ class ClaudeLLM:
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 
-class GeminiLLM:
-    """Google Gemini over its REST API (a free tier exists; key from aistudio.google.com)."""
+# Gemini answers "busy" (503) or "over the free limit" (429) now and then, especially on its newest
+# model. Free-tier limits are per model, so moving on to the next model keeps the viva going.
+BUSY = {500, 502, 503, 504}
 
-    def __init__(self):
+
+class GeminiLLM:
+    """Google Gemini over its REST API (a free tier exists; key from aistudio.google.com).
+    Tries GEMINI_MODEL, then each of GEMINI_FALLBACK_MODELS; a busy model gets one retry first."""
+
+    def __init__(self, retry_delay: float = 1.5):
         import httpx
 
         settings = get_settings()
@@ -85,7 +92,9 @@ class GeminiLLM:
             raise LLMError("Gemini API key missing (set GEMINI_API_KEY in backend/.env).")
         self._httpx = httpx
         self._client = httpx.AsyncClient(timeout=90.0, headers={"x-goog-api-key": settings.gemini_api_key})
-        self._url = GEMINI_URL.format(model=settings.gemini_model)
+        models = [settings.gemini_model, *settings.gemini_fallback_models]
+        self._models = list(dict.fromkeys(m for m in models if m))  # in order, no repeats
+        self._retry_delay = retry_delay
 
     async def json(self, system: str, prompt: str, schema: dict, max_tokens: int = 4000) -> dict:
         body = {
@@ -98,43 +107,62 @@ class GeminiLLM:
                 "maxOutputTokens": max_tokens + 8000,
             },
         }
-        res = await self._post(body)
-        if res.status_code == 400 and "responseJsonSchema" in res.text:
-            # A model without schema support: ask for the shape in words instead.
-            del body["generationConfig"]["responseJsonSchema"]
-            body["contents"][0]["parts"][0]["text"] += (
-                "\n\nAnswer with JSON only, matching this JSON schema:\n" + json.dumps(schema)
-            )
-            res = await self._post(body)
-        if res.status_code in (401, 403) or (res.status_code == 400 and "API key" in res.text):
-            raise LLMError("Gemini API key missing or invalid (set GEMINI_API_KEY in backend/.env).")
-        if res.status_code == 404:
+        statuses = []
+        for model in self._models:
+            res = await self._ask(model, body, schema)
+            if res.status_code in BUSY:
+                await asyncio.sleep(self._retry_delay)
+                res = await self._ask(model, body, schema)
+            statuses.append(res.status_code)
+            if res.status_code in BUSY or res.status_code in (404, 429):
+                log.warning("Gemini %s answered %s; trying the next model", model, res.status_code)
+                continue  # this model is busy, unknown or out of free quota: try the next one
+            if res.status_code in (401, 403) or (res.status_code == 400 and "API key" in res.text):
+                raise LLMError("Gemini API key missing or invalid (set GEMINI_API_KEY in backend/.env).")
+            if res.status_code >= 400:
+                raise LLMError(f"Gemini API error {res.status_code}.")
+            return self._parse(res.json())
+
+        if all(code == 404 for code in statuses):
             raise LLMError(
                 "Gemini model not found: check GEMINI_MODEL in backend/.env (see aistudio.google.com)."
             )
-        if res.status_code == 429:
-            raise LLMError("Gemini free-tier limit reached; try again in a minute.")
-        if res.status_code >= 400:
-            raise LLMError(f"Gemini API error {res.status_code}.")
+        if 429 in statuses and not any(code in BUSY for code in statuses):
+            raise LLMError("Gemini free-tier limit reached on every model; try again in a minute.")
+        raise LLMError("Gemini is busy right now (Google's servers); try Refresh in a moment.")
 
-        data = res.json()
+    async def _ask(self, model: str, body: dict, schema: dict):
+        res = await self._post(GEMINI_URL.format(model=model), body)
+        if res.status_code == 400 and "responseJsonSchema" in res.text:
+            # A model without schema support: ask for the shape in words instead.
+            config = {k: v for k, v in body["generationConfig"].items() if k != "responseJsonSchema"}
+            text = body["contents"][0]["parts"][0]["text"]
+            text += "\n\nAnswer with JSON only, matching this JSON schema:\n" + json.dumps(schema)
+            res = await self._post(
+                GEMINI_URL.format(model=model),
+                body
+                | {"generationConfig": config, "contents": [{"role": "user", "parts": [{"text": text}]}]},
+            )
+        return res
+
+    @staticmethod
+    def _parse(data: dict) -> dict:
         candidate = (data.get("candidates") or [{}])[0]
         reason = candidate.get("finishReason", "")
         if data.get("promptFeedback", {}).get("blockReason") or reason in ("SAFETY", "PROHIBITED_CONTENT"):
             raise LLMError("Gemini declined this request.")
         if reason == "MAX_TOKENS":
             raise LLMError("Gemini's answer was cut off.")
-        text = "".join(
-            p.get("text", "") for p in candidate.get("content", {}).get("parts", []) if not p.get("thought")
-        )
+        parts = candidate.get("content", {}).get("parts", [])
+        text = "".join(p.get("text", "") for p in parts if not p.get("thought"))
         try:
             return json.loads(text.strip().removeprefix("```json").removesuffix("```"))
         except json.JSONDecodeError as exc:
             raise LLMError("Gemini returned malformed JSON.") from exc
 
-    async def _post(self, body: dict):
+    async def _post(self, url: str, body: dict):
         try:
-            return await self._client.post(self._url, json=body)
+            return await self._client.post(url, json=body)
         except self._httpx.HTTPError as exc:
             raise LLMError("Can't reach the Gemini API.") from exc
 
