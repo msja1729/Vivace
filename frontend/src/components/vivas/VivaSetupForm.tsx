@@ -105,7 +105,7 @@ export function VivaSetupForm({
   }
 
   return (
-    <div className="space-y-5 pb-24">
+    <div className="space-y-5">
       {locked && (
         <p className="rounded-lg border border-border-strong bg-raised px-4 py-3 text-sm text-muted">
           This viva has {viva.phase === "live" ? "started" : "finished"}, so its setup can no longer be changed.
@@ -279,8 +279,8 @@ export function VivaSetupForm({
 
       {/* ---------- Action bar ---------- */}
       {!locked && (
-        <div className="fixed inset-x-0 bottom-0 z-20 glass-bar border-t border-border lg:left-64">
-          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-8">
+        <div className="glass-float sticky bottom-3 z-20 rounded-2xl shadow-[0_16px_36px_-18px_rgb(90_50_170/0.5)] lg:bottom-8">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-5">
             <div className="min-w-0 flex-1 text-sm">
               {error ? (
                 <FormError message={error} />

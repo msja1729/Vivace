@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { StudentViva } from "@/types";
 import { listDevices, openCameraAndMic, stopStream, streamAudio, streamFrames } from "@/lib/live/media";
 import { LiveRoom, type LiveMessage } from "@/lib/live/room";
@@ -361,13 +362,16 @@ function Calibration({
       "bottom-right": "bottom-6 right-6",
       "bottom-left": "bottom-6 left-6",
     }[CORNERS[corner]];
-    return (
+    // Rendered on <body>: the corners must be the screen's corners, not those of the app's glass
+    // window (its blur makes it the frame that `fixed` elements are placed in).
+    return createPortal(
       <div className="fixed inset-0 z-50 bg-bg">
         <p className="absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-muted">
           Keep your head still and follow the dot with your eyes ({corner + 1}/4)
         </p>
         <span className={`absolute ${pos} h-6 w-6 animate-pulse rounded-full bg-accent shadow-[0_0_24px_rgb(124_140_255)]`} />
-      </div>
+      </div>,
+      document.body,
     );
   }
 

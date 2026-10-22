@@ -1,44 +1,48 @@
 @import "tailwindcss";
 
+/* `dark:` utilities follow the theme toggle (data-theme on <html>), not just the device setting. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 /*
- * Design tokens. Light (default): pastel lavender / pink glass, after UI.png.
- * Dark: the same glass over deep plum. Utilities read these variables, so redefining
- * them under [data-theme="dark"] re-themes every page. The theme is set on <html>
- * before first paint (see app/layout.tsx) and switched by the ThemeToggle.
+ * Glass design, after UI.png. Frosted, see-through panels float over soft colour glows
+ * (components/layout/Backdrop.tsx): the glows are what make the glass read as glass.
+ * Light is pastel lavender / pink; dark is the same glass over deep plum.
+ * Utilities read these variables, so redefining them under [data-theme="dark"] re-themes
+ * every page. The theme is set on <html> before first paint (see app/layout.tsx).
  */
 @theme {
-  --color-bg: #f4eefb;
-  --color-panel: #fbf8ff; /* solid fallback (drawer, menus) */
-  --color-raised: rgb(140 104 214 / 0.1); /* hover / selected fill */
-  --color-tint: rgb(255 255 255 / 0.55); /* inset boxes inside a panel */
-  --color-input: rgb(255 255 255 / 0.75);
-  --color-border: rgb(139 112 196 / 0.16);
-  --color-border-strong: rgb(139 112 196 / 0.3);
-  --color-text: #34325a;
-  --color-muted: #6f6c94;
-  --color-subtle: #9c99ba;
-  --color-accent: #9147f5;
-  --color-accent-soft: rgb(145 71 245 / 0.12);
-  --color-success: #11a36f;
-  --color-warning: #c27a06;
-  --color-danger: #e0435e;
+  --color-bg: #efe8fb;
+  --color-panel: #f7f2ff; /* solid fallback (drawer, menus) */
+  --color-raised: rgb(255 255 255 / 0.55); /* hover / selected fill */
+  --color-tint: rgb(255 255 255 / 0.35); /* inset boxes inside a panel */
+  --color-input: rgb(255 255 255 / 0.5);
+  --color-border: rgb(120 90 190 / 0.14);
+  --color-border-strong: rgb(120 90 190 / 0.24);
+  --color-text: #2f2c55;
+  --color-muted: #625e8c;
+  --color-subtle: #938fb5;
+  --color-accent: #8b3ff2;
+  --color-accent-soft: rgb(139 63 242 / 0.12);
+  --color-success: #0f9466;
+  --color-warning: #b86e00;
+  --color-danger: #d93355;
 
   --font-sans: var(--font-poppins), system-ui, sans-serif;
 }
 
 [data-theme="dark"] {
-  --color-bg: #110c1f;
-  --color-panel: #1b1430;
-  --color-raised: rgb(255 255 255 / 0.07);
-  --color-tint: rgb(255 255 255 / 0.03);
-  --color-input: rgb(0 0 0 / 0.25);
-  --color-border: rgb(255 255 255 / 0.09);
-  --color-border-strong: rgb(255 255 255 / 0.17);
-  --color-text: #f3effb;
-  --color-muted: #b4aacb;
-  --color-subtle: #7d7398;
-  --color-accent: #c38bff;
-  --color-accent-soft: rgb(195 139 255 / 0.14);
+  --color-bg: #0e0a1c;
+  --color-panel: #1a1330;
+  --color-raised: rgb(255 255 255 / 0.09);
+  --color-tint: rgb(255 255 255 / 0.04);
+  --color-input: rgb(255 255 255 / 0.05);
+  --color-border: rgb(255 255 255 / 0.1);
+  --color-border-strong: rgb(255 255 255 / 0.18);
+  --color-text: #f4f0fc;
+  --color-muted: #b8aed0;
+  --color-subtle: #82789f;
+  --color-accent: #c590ff;
+  --color-accent-soft: rgb(197 144 255 / 0.15);
   --color-success: #34d399;
   --color-warning: #fbbf24;
   --color-danger: #fb7185;
@@ -55,66 +59,140 @@ body {
   color: var(--color-text);
   font-family: var(--font-sans);
   background-color: var(--color-bg);
-  /* Soft coloured light behind the glass. Fixed, so it stays put while pages scroll. */
-  background-image:
-    radial-gradient(56rem 40rem at 0% -10%, rgb(199 182 255 / 0.85), transparent 60%),
-    radial-gradient(50rem 36rem at 100% 0%, rgb(255 199 226 / 0.9), transparent 60%),
-    radial-gradient(48rem 40rem at 85% 110%, rgb(244 176 236 / 0.55), transparent 62%),
-    radial-gradient(44rem 36rem at 10% 110%, rgb(178 196 255 / 0.6), transparent 62%),
-    linear-gradient(180deg, #f6f0fc, #f1eafa);
-  background-attachment: fixed;
 }
-[data-theme="dark"] body {
-  background-image:
-    radial-gradient(56rem 40rem at 0% -10%, rgb(110 64 214 / 0.35), transparent 60%),
-    radial-gradient(50rem 36rem at 100% 0%, rgb(214 64 166 / 0.22), transparent 60%),
-    radial-gradient(48rem 40rem at 85% 110%, rgb(160 60 220 / 0.2), transparent 62%),
-    radial-gradient(44rem 36rem at 10% 110%, rgb(64 84 214 / 0.2), transparent 62%),
-    linear-gradient(180deg, #130d22, #0d0918);
+
+/* ---------- glass ---------- */
+
+/* The big frame the signed-in app sits in (desktop), like the window in UI.png. */
+@utility glass-window {
+  @apply backdrop-blur-2xl backdrop-saturate-150;
+  background-image: linear-gradient(135deg, rgb(255 255 255 / 0.42), rgb(255 255 255 / 0.18));
+  border: 1px solid rgb(255 255 255 / 0.65);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.85),
+    0 40px 80px -30px rgb(90 50 170 / 0.35);
+  [data-theme="dark"] & {
+    background-image: linear-gradient(135deg, rgb(255 255 255 / 0.08), rgb(255 255 255 / 0.02));
+    border-color: rgb(255 255 255 / 0.12);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.12),
+      0 40px 80px -30px rgb(0 0 0 / 0.7);
+  }
 }
 
 @layer components {
   /*
-   * Frosted glass panel. Blur uses Tailwind's utility: a plain `backdrop-filter`
+   * A frosted glass card. Blur uses Tailwind's utilities: a plain `backdrop-filter`
    * line gets dropped by the build.
    */
   .panel {
-    @apply backdrop-blur-xl;
-    background-image: linear-gradient(160deg, rgb(255 255 255 / 0.85), rgb(255 255 255 / 0.6));
-    border: 1px solid rgb(255 255 255 / 0.9);
+    @apply backdrop-blur-xl backdrop-saturate-150;
+    background-image: linear-gradient(140deg, rgb(255 255 255 / 0.62), rgb(255 255 255 / 0.3));
+    border: 1px solid rgb(255 255 255 / 0.75);
     box-shadow:
-      0 1px 0 rgb(255 255 255 / 0.6) inset,
-      0 18px 40px -22px rgb(110 70 190 / 0.35);
+      inset 0 1px 0 rgb(255 255 255 / 0.9),
+      inset 0 -1px 0 rgb(255 255 255 / 0.25),
+      0 18px 40px -22px rgb(90 50 170 / 0.4);
   }
   [data-theme="dark"] .panel {
-    background-image: linear-gradient(160deg, rgb(255 255 255 / 0.08), rgb(255 255 255 / 0.03) 60%);
-    border-color: var(--color-border);
+    background-image: linear-gradient(140deg, rgb(255 255 255 / 0.1), rgb(255 255 255 / 0.03));
+    border-color: rgb(255 255 255 / 0.13);
     box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.07),
+      inset 0 1px 0 rgb(255 255 255 / 0.14),
       0 18px 40px -20px rgb(0 0 0 / 0.75);
   }
 
-  /* Thinner glass for bars and the sidebar. */
+  /* Bars (top bar, sticky footers): lighter glass. */
   .glass-bar {
-    @apply backdrop-blur-2xl;
-    background-color: rgb(250 246 255 / 0.6);
+    @apply backdrop-blur-2xl backdrop-saturate-150;
+    background-color: rgb(255 255 255 / 0.4);
+    border-color: rgb(255 255 255 / 0.6);
   }
   [data-theme="dark"] .glass-bar {
-    background-color: rgb(20 14 36 / 0.6);
+    background-color: rgb(24 16 44 / 0.45);
+    border-color: rgb(255 255 255 / 0.1);
+  }
+
+  /* A bar floating over page content inside the glass window. Blur can't reach through the
+     window's own blur, so this one is solid, tinted like frosted glass. */
+  .glass-float {
+    background-image: linear-gradient(135deg, #fcf9ff, #f3eaff);
+    border: 1px solid rgb(255 255 255 / 0.85);
+  }
+  [data-theme="dark"] .glass-float {
+    background-image: linear-gradient(135deg, #2a1c48, #1c1434);
+    border-color: rgb(255 255 255 / 0.12);
   }
 
   /* The brand gradient: purple → magenta (buttons, logo, highlights). */
   .brand-gradient {
-    background-image: linear-gradient(100deg, #a24cf5, #e64fc2);
+    background-image: linear-gradient(100deg, #9d4bf6, #e24fc4);
   }
 
-  /* Deep featured card ("Top rated" card in the design): indigo → violet with soft light. */
+  /* The deep featured card ("Top rated" in the design): violet glass with a soft light. */
   .featured {
+    @apply backdrop-blur-xl;
     color: #fff;
     background-image:
-      radial-gradient(28rem 16rem at 100% 0%, rgb(232 90 214 / 0.55), transparent 65%),
-      linear-gradient(120deg, #3f4b8f, #6a4cc4 55%, #9b4fd9);
-    box-shadow: 0 24px 48px -24px rgb(90 60 180 / 0.65);
+      radial-gradient(30rem 18rem at 100% 0%, rgb(240 100 220 / 0.6), transparent 65%),
+      linear-gradient(120deg, rgb(62 72 150 / 0.92), rgb(108 76 200 / 0.88) 55%, rgb(160 80 220 / 0.85));
+    border: 1px solid rgb(255 255 255 / 0.28);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.35),
+      0 28px 56px -26px rgb(90 50 190 / 0.7);
+  }
+
+  /* Glossy 3D sphere, like the floating balls in the design. */
+  .orb {
+    border-radius: 9999px;
+    background: radial-gradient(circle at 32% 28%, #fff 0%, #f3d4ff 14%, #c77dff 45%, #8a3ffc 78%, #6d28d9 100%);
+    box-shadow:
+      inset -6px -8px 16px rgb(80 20 160 / 0.35),
+      0 16px 30px -8px rgb(140 60 240 / 0.45);
+  }
+  .orb-pink {
+    background: radial-gradient(circle at 32% 28%, #fff 0%, #ffe0f1 14%, #ff8fd0 45%, #e2489f 80%, #b82a7e 100%);
+    box-shadow:
+      inset -6px -8px 16px rgb(150 20 90 / 0.3),
+      0 16px 30px -8px rgb(230 70 160 / 0.45);
+  }
+  .orb-blue {
+    background: radial-gradient(circle at 32% 28%, #fff 0%, #e0e8ff 14%, #93a8ff 45%, #5b6cf0 80%, #4049c9 100%);
+    box-shadow:
+      inset -6px -8px 16px rgb(30 40 150 / 0.3),
+      0 16px 30px -8px rgb(80 100 240 / 0.45);
+  }
+}
+
+/* Slow drift for the background glows and orbs. */
+@keyframes drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(3vw, -2vh, 0) scale(1.06);
+  }
+}
+@keyframes bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-14px);
+  }
+}
+.animate-drift {
+  animation: drift 22s ease-in-out infinite;
+}
+.animate-bob {
+  animation: bob 9s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-drift,
+  .animate-bob {
+    animation: none;
   }
 }
 

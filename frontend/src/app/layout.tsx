@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Poppins } from "next/font/google";
 import { siteConfig } from "@/config/site";
 import { AuthProvider } from "@/lib/auth/AuthProvider";
+import { Backdrop } from "@/components/layout/Backdrop";
 import { themeInitScript } from "@/lib/theme";
 import "./globals.css";
 
@@ -21,6 +22,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
       <body className="min-h-full">
+        <Backdrop />
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
