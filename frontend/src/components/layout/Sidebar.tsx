@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth/AuthProvider";
 import { useWorkspace } from "@/lib/workspace";
 import { Logo } from "@/components/ui/Logo";
 import { Avatar, Badge } from "@/components/ui/Display";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import {
   ChevronLeftIcon,
   ClipboardIcon,
@@ -92,10 +93,13 @@ export function Sidebar({ user, onNavigate }: { user: User; onNavigate?: () => v
           </div>
         ) : (
           <>
-            <NavList items={appNav} pathname={pathname} onNavigate={onNavigate} />
+            <div>
+              <p className="px-2 text-[11px] font-semibold tracking-[0.18em] text-subtle uppercase">Menu</p>
+              <NavList items={appNav} pathname={pathname} onNavigate={onNavigate} className="mt-2" />
+            </div>
             {yourClasses.length > 0 && (
               <div>
-                <p className="px-2 text-xs font-medium tracking-wide text-subtle uppercase">Your classes</p>
+                <p className="px-2 text-[11px] font-semibold tracking-[0.18em] text-subtle uppercase">Your classes</p>
                 <ul className="mt-2 space-y-0.5">
                   {yourClasses.map((c) => (
                     <li key={c.id}>
@@ -141,8 +145,10 @@ function NavList({
               href={item.href}
               onClick={onNavigate}
               aria-current={active ? "page" : undefined}
-              className={`flex items-center gap-3 rounded-lg px-2 py-2 text-sm transition ${
-                active ? "bg-raised font-medium text-text" : "text-muted hover:bg-raised/60 hover:text-text"
+              className={`relative flex items-center gap-3 rounded-xl px-2 py-2 text-sm transition ${
+                active
+                  ? "bg-raised font-medium text-text before:absolute before:top-2 before:bottom-2 before:-left-3 before:w-[3px] before:rounded-r before:bg-accent"
+                  : "text-muted hover:bg-raised/60 hover:text-text"
               }`}
             >
               <span className={active ? "text-accent" : ""}>{item.icon}</span>
@@ -159,7 +165,7 @@ function UserCard({ user }: { user: User }) {
   const { signOut } = useAuth();
   const router = useRouter();
   return (
-    <div className="m-3 rounded-xl border border-border bg-raised/50 p-3">
+    <div className="m-3 rounded-2xl border border-border bg-tint p-3">
       <div className="flex items-center gap-3">
         <Avatar name={user.name} />
         <div className="min-w-0 flex-1">
@@ -179,10 +185,11 @@ function UserCard({ user }: { user: User }) {
           <LogoutIcon />
         </button>
       </div>
-      <div className="mt-2">
+      <div className="mt-2 flex items-center justify-between">
         <Badge tone={user.role === "instructor" ? "accent" : "neutral"}>
           <span className="capitalize">{user.role}</span>
         </Badge>
+        <ThemeToggle className="h-8 w-8" />
       </div>
     </div>
   );

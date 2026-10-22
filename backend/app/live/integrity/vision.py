@@ -40,7 +40,7 @@ class FrameObs:
     pitch: float | None = None  # degrees, head up/down
     eye_x: float | None = None  # -1..1, eyes looking towards the student's right (-) / left (+)
     eye_y: float | None = None  # -1..1, down (-) / up (+)
-    mouth_open: float | None = None  # 0..1 (jawOpen blendshape)
+    mouth_open: float | None = None  # ~0..1: jawOpen blendshape or inner-lip gap, whichever is larger
     mesh: list[list[float]] = field(default_factory=list)  # overlay points, 0..1
     eye_center: list[float] | None = None
     objects: list[dict] = field(default_factory=list)  # {label, conf, box}
@@ -101,7 +101,11 @@ def analyze(jpeg: bytes, run_objects: bool = True) -> FrameObs:
                     - b.get("eyeLookDownLeft", 0)
                     - b.get("eyeLookDownRight", 0)
                 ) / 2
-                obs.mouth_open = b.get("jawOpen", 0)
+                # jawOpen stays near 0 for people who talk with little jaw movement, so also measure
+                # the gap between the inner lips (13, 14), relative to the distance between the eyes.
+                eyes = math.dist((lms[33].x, lms[33].y), (lms[263].x, lms[263].y)) or 1.0
+                lip_gap = math.dist((lms[13].x, lms[13].y), (lms[14].x, lms[14].y)) / eyes
+                obs.mouth_open = max(b.get("jawOpen", 0), lip_gap)
             indices, _ = overlay_layout()
             obs.mesh = [[round(lms[i].x, 4), round(lms[i].y, 4)] for i in indices if i < len(lms)]
             if len(lms) > 473:

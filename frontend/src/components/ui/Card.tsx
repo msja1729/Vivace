@@ -1,5 +1,5 @@
 export function Card({ className = "", children }: { className?: string; children: React.ReactNode }) {
-  return <div className={`panel rounded-xl p-5 ${className}`}>{children}</div>;
+  return <div className={`panel rounded-2xl p-5 ${className}`}>{children}</div>;
 }
 
 /** Card with a titled header row (optional actions on the right). */
@@ -17,7 +17,7 @@ export function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className={`panel rounded-xl ${className}`}>
+    <section className={`panel rounded-2xl ${className}`}>
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-5 py-4">
         <div>
           <h2 className="text-sm font-semibold">{title}</h2>

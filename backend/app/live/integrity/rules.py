@@ -104,9 +104,11 @@ class IntegrityMonitor:
         self.calibration: Calibration | None = None
 
         self._gaze = _Condition("gaze_off_screen", i.gaze_off_seconds)
+        # Looking up is what people do while thinking (notes are never on the ceiling): it needs longer.
+        self._gaze_up = _Condition("gaze_off_screen", i.gaze_up_seconds)
         self._head = _Condition("head_turned", i.head_turn_seconds)
         self._no_face = _Condition("no_face", i.no_face_seconds)
-        self._faces = _Condition("multiple_faces", 0.3)  # 2 frames in a row, not a one-frame glitch
+        self._faces = _Condition("multiple_faces", 1.0)  # a whole second, not a detector glitch
         self._reading = _Condition("reading_pattern", 0)
         self._lipsync = _Condition("lipsync_mismatch", i.lipsync_seconds)
         self._person = _Condition("second_person", 0)
@@ -115,6 +117,8 @@ class IntegrityMonitor:
         self._recent_objects: deque[set[str]] = deque(maxlen=5)
         self._recent_persons: deque[int] = deque(maxlen=5)
         self._eyes: deque[tuple[float, float]] = deque()  # (t, eye_x)
+        self._reading_paused_until = 0.0
+        self._low_voice: Flag | None = None  # a voice check that didn't match, waiting for a second one
         self._mouth: deque[tuple[float, float]] = deque()  # (t, mouth_open)
         self._voice: deque[tuple[float, bool]] = deque()  # (t, student speaking)
 
@@ -130,6 +134,11 @@ class IntegrityMonitor:
         return self.bounds
 
     # ---------- inputs ----------
+
+    def pause_reading(self, until: float) -> None:
+        """A question is on the student's screen: reading it is expected, not a flag."""
+        self._reading_paused_until = max(self._reading_paused_until, until)
+        self._eyes.clear()
 
     def on_voice(self, t: float, speaking: bool) -> None:
         """Student voice activity (one call per audio chunk), used by the lip-sync check."""
@@ -150,11 +159,13 @@ class IntegrityMonitor:
             changes += self._no_face.update(t, obs.faces == 0)
             changes += self._faces.update(t, obs.faces > 1, f"{obs.faces} faces")
 
-            off = False
+            off = up = False
             if one and obs.eye_x is not None:
                 bx, by = self.bounds["eye_x"], self.bounds["eye_y"]
-                off = not (bx[0] <= obs.eye_x <= bx[1] and by[0] <= obs.eye_y <= by[1])
+                off = not (bx[0] <= obs.eye_x <= bx[1]) or obs.eye_y < by[0]
+                up = not off and obs.eye_y > by[1]
             changes += self._gaze.update(t, off)
+            changes += self._gaze_up.update(t, up, "looking up")
 
             turned, detail = False, ""
             if one and obs.yaw is not None:
@@ -163,7 +174,8 @@ class IntegrityMonitor:
                 detail = f"yaw {dyaw:+.0f}°, pitch {dpitch:+.0f}°"
             changes += self._head.update(t, turned, detail)
 
-            changes += self._reading.update(t, one and self._reading_sweeps(t, obs.eye_x) >= i.reading_sweeps)
+            reading = one and self._reading_lines(t, obs.eye_x) >= i.reading_sweeps
+            changes += self._reading.update(t, reading and t >= self._reading_paused_until)
 
             if one and obs.mouth_open is not None:
                 self._mouth.append((t, obs.mouth_open))
@@ -188,16 +200,24 @@ class IntegrityMonitor:
         return changes
 
     def on_speaker_check(self, start: float, end: float, similarity: float) -> Change | None:
-        """A finished student speech segment compared with the enrolled voice print."""
+        """A finished student speech segment compared with the enrolled voice print.
+
+        A genuine speaker matches poorly now and then (short clip, noise, a cough), so a flag needs
+        two poor matches in a row, less than 30 s apart. It covers both segments."""
         if similarity >= self.cfg.integrity.speaker_similarity:
+            self._low_voice = None
             return None
+        detail = f"voice match {similarity:.2f}"
+        prev = self._low_voice
+        if prev is None or start - prev.end > 30:
+            self._low_voice = Flag(
+                "secondary_speaker", start, end, round(1 - similarity, 2), detail, closed=True
+            )
+            return None
+        self._low_voice = None
+        conf = max(prev.confidence, round(1 - similarity, 2))
         flag = Flag(
-            "secondary_speaker",
-            start,
-            end,
-            round(1 - similarity, 2),
-            f"voice match {similarity:.2f}",
-            closed=True,
+            "secondary_speaker", prev.start, end, conf, f"{prev.detail}, then {similarity:.2f}", closed=True
         )
         self.flags.append(flag)
         return Change("open", flag)
@@ -205,6 +225,7 @@ class IntegrityMonitor:
     def close_all(self, t: float) -> list[Change]:
         conds = [
             self._gaze,
+            self._gaze_up,
             self._head,
             self._no_face,
             self._faces,
@@ -216,26 +237,51 @@ class IntegrityMonitor:
 
     # ---------- detectors over time ----------
 
-    def _reading_sweeps(self, t: float, eye_x: float | None) -> int:
-        """Left-right sweeps in the window: passes of the eyes across >= 0.15, two passes per sweep."""
+    def _reading_lines(self, t: float, eye_x: float | None) -> int:
+        """Lines of text read within the window.
+
+        Reading has a signature that looking around while talking doesn't: the eyes travel slowly
+        across a line in one direction, then jump back quickly, again and again. Glances are quick
+        jumps both ways. Eye positions are median-smoothed (the model jitters by ~0.03), and a line
+        must cover a good part of the calibrated screen width."""
         window = self.cfg.integrity.reading_window_seconds
         if eye_x is not None:
             self._eyes.append((t, eye_x))
         while self._eyes and self._eyes[0][0] < t - window:
             self._eyes.popleft()
-        passes, anchor, direction = 0, None, 0
-        for _, x in self._eyes:
-            if anchor is None:
-                anchor = x
-                continue
-            d = x - anchor
-            if direction >= 0 and d <= -0.15 or direction <= 0 and d >= 0.15:
-                passes += 1
-                direction = -1 if d < 0 else 1
-                anchor = x
-            elif direction * d > 0:
-                anchor = x  # still moving the same way: extend the pass
-        return passes // 2
+        pts = list(self._eyes)
+        if len(pts) < 5:
+            return 0
+        xs = [statistics.median(p[1] for p in pts[max(0, k - 1) : k + 2]) for k in range(len(pts))]
+        bx = self.bounds["eye_x"]
+        span = max(0.4, (bx[1] - bx[0] - 0.24) / 1.5)  # screen width in eye units (undo calibration padding)
+        min_line, turn = max(0.2, 0.3 * span), 0.1
+
+        def run(a: int, b: int) -> tuple[float, float, float]:
+            """(amplitude, seconds, biggest single step). Reading moves in many small steps; glances
+            jump. Hopping between two or three spots on the screen has big steps, so it isn't a line."""
+            steps = [abs(xs[k + 1] - xs[k]) for k in range(a, b)]
+            return abs(xs[b] - xs[a]), pts[b][0] - pts[a][0], max(steps, default=0.0)
+
+        # Split the track into runs that move one way; a run ends when the eyes come back by > `turn`.
+        runs: list[tuple[float, float]] = []
+        start, peak, direction = 0, 0, 0
+        for k in range(1, len(xs)):
+            d = xs[k] - xs[peak]
+            if direction == 0:
+                if abs(xs[k] - xs[start]) > turn:
+                    direction, peak = (1 if xs[k] > xs[start] else -1), k
+            elif direction * d >= 0:
+                peak = k
+            elif -direction * d > turn:
+                runs.append(run(start, peak))
+                start, peak, direction = peak, k, -direction
+        lines = 0
+        for (across, across_s, across_step), (back, _, back_step) in zip(runs, runs[1:], strict=False):
+            slow_across = across >= min_line and across_s >= 0.8 and across_step <= 0.35 * across
+            quick_back = back >= 0.6 * across and back_step >= 0.5 * back
+            lines += slow_across and quick_back
+        return lines
 
     def _lips_still_while_speaking(self, t: float) -> bool:
         window = [s for ts, s in self._voice if ts >= t - 2]
@@ -243,7 +289,8 @@ class IntegrityMonitor:
         if len(window) < 5 or len(mouth) < 5:
             return False
         speaking = sum(window) / len(window) >= 0.6
-        still = max(mouth) < 0.12 and statistics.pstdev(mouth) < 0.025
+        # Speech is impossible with the lips shut, so only a closed, unmoving mouth counts.
+        still = max(mouth) < 0.05 and statistics.pstdev(mouth) < 0.015
         return speaking and still
 
     # ---------- score ----------

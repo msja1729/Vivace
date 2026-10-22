@@ -20,6 +20,7 @@ def upload_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(get_settings(), "upload_dir", str(tmp_path / "uploads"))
     monkeypatch.setattr(get_settings(), "live_warm_up", False)
     monkeypatch.setattr(get_settings(), "snapshot_retention_days", 0)
+    monkeypatch.setattr(get_settings(), "auth_mode", "dev")  # the login() helper uses dev-login
     return tmp_path / "uploads"
 
 

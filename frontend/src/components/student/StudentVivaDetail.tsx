@@ -79,7 +79,7 @@ export function StudentVivaDetail({ cls }: { cls: ClassRoom }) {
             <p className="mt-1 text-sm text-muted">Time left</p>
             <p className="text-4xl font-bold tabular-nums">{formatCountdown(t(v.myEndsAt) - now)}</p>
           </div>
-          <p className="mx-auto max-w-md rounded-lg border border-border bg-white/[0.03] px-4 py-3 text-sm text-muted">
+          <p className="mx-auto max-w-md rounded-lg border border-border bg-tint px-4 py-3 text-sm text-muted">
             The live viva — camera, microphone and the AI interviewer — connects here. That part is being built next.
           </p>
         </Card>

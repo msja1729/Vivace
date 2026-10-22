@@ -177,7 +177,7 @@ function DeviceCheck({
       </div>
       <div className="flex items-center gap-3 text-sm">
         <MicIcon className="h-4 w-4 text-muted" />
-        <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/10">
+        <div className="h-2 flex-1 overflow-hidden rounded-full bg-raised">
           <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${Math.min(100, level * 250)}%` }} />
         </div>
         <span className="w-28 text-right text-xs text-muted">{heard ? "Mic works" : "Say something…"}</span>
@@ -377,7 +377,7 @@ function Calibration({
       <Card className="mx-auto max-w-2xl space-y-4">
         <h2 className="text-lg font-semibold">Voice sample</h2>
         <p className="text-sm text-muted">Read this sentence aloud at a normal pace. It lets us recognise your voice.</p>
-        <p className="rounded-lg border border-border bg-white/[0.03] p-4 text-lg">{SENTENCE}</p>
+        <p className="rounded-lg border border-border bg-tint p-4 text-lg">{SENTENCE}</p>
         {voiceStarted === null ? (
           <Button
             variant="accent"

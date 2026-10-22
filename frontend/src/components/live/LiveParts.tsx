@@ -43,7 +43,7 @@ export function ScoreMeter({
         {value === null ? "–" : Math.round(value)}
         {value !== null && <span className="text-base font-medium text-subtle">%</span>}
       </p>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10" role="meter" aria-valuenow={value ?? 0} aria-valuemin={0} aria-valuemax={100} aria-label={label}>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-raised" role="meter" aria-valuenow={value ?? 0} aria-valuemin={0} aria-valuemax={100} aria-label={label}>
         <div
           className={`h-full rounded-full transition-all ${band ? band.bar : "bg-accent"}`}
           style={{ width: `${Math.min(100, Math.max(0, value ?? 0))}%` }}
@@ -180,7 +180,7 @@ function EventRow({ sessionId, event: e }: { sessionId: string; event: Integrity
   }
 
   return (
-    <li className={`rounded-lg border px-3 py-2 text-sm ${e.open ? "border-danger/40 bg-danger/[0.07]" : "border-border bg-white/[0.02]"}`}>
+    <li className={`rounded-lg border px-3 py-2 text-sm ${e.open ? "border-danger/40 bg-danger/[0.07]" : "border-border bg-tint"}`}>
       <button type="button" onClick={toggle} className="flex w-full items-start gap-2 text-left">
         <AlertIcon className={`mt-0.5 h-4 w-4 shrink-0 ${e.open ? "text-danger" : "text-warning"}`} />
         <span className="min-w-0 flex-1">
@@ -212,7 +212,7 @@ const pct = (x: number | null | undefined) => (x === null || x === undefined ? "
 /** The Grader's notes on one answer. */
 export function AnswerNotes({ a }: { a: AnswerAnalysis }) {
   return (
-    <div className="mt-2 rounded-lg border border-border bg-white/[0.03] p-3 text-xs">
+    <div className="mt-2 rounded-lg border border-border bg-tint p-3 text-xs">
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted">
         {a.mastery !== undefined && a.mastery !== null && (
           <span>

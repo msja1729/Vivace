@@ -2,7 +2,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.errors import BadRequest, Conflict
+from app.core.errors import BadRequest, Conflict, Unauthorized
+from app.core.security import hash_password, verify_password
 from app.models import Role, User
 
 
@@ -26,6 +27,25 @@ def get_or_create_user(db: Session, name: str, email: str) -> User:
         db.add(user)
         db.commit()
         db.refresh(user)
+    return user
+
+
+def register(db: Session, name: str, email: str, password: str, role: Role) -> User:
+    """A new email + password account, with its role chosen on the form."""
+    email = ensure_school_email(email)
+    if db.scalar(select(User).where(User.email == email)) is not None:
+        raise Conflict("An account with this email already exists. Log in instead.")
+    user = User(name=name.strip(), email=email, role=role, password_hash=hash_password(password))
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def authenticate(db: Session, email: str, password: str) -> User:
+    user = db.scalar(select(User).where(User.email == email.strip().lower()))
+    if user is None or not verify_password(password, user.password_hash):
+        raise Unauthorized("Incorrect email or password.")
     return user
 
 

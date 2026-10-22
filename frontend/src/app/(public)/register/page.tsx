@@ -1,13 +1,19 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import type { Role } from "@/types";
 import { useAuth } from "@/lib/auth/AuthProvider";
-import { Card } from "@/components/ui/Card";
+import { register } from "@/lib/api/auth";
+import { AuthFrame } from "@/components/auth/AuthFrame";
 import { MicrosoftSignIn } from "@/components/auth/MicrosoftSignIn";
-import { RoleSelector } from "@/components/auth/RoleSelector";
+import { RoleCards, RoleSelector } from "@/components/auth/RoleSelector";
+import { Button } from "@/components/ui/Button";
+import { FormError, TextField } from "@/components/ui/Field";
 
-// Step 1: sign in with Microsoft school account. Step 2: pick Student / Instructor.
+// Create an account (name, school email, password, role), then log in on /login.
+// Microsoft sign-ins land here too and pick their role on a second step.
 export default function RegisterPage() {
   const { user, loading, setRole } = useAuth();
   const router = useRouter();
@@ -18,23 +24,113 @@ export default function RegisterPage() {
 
   if (loading || user?.role) return null;
 
-  const step = user ? 2 : 1;
+  if (user) {
+    return (
+      <AuthFrame
+        eyebrow="Step 2 of 2"
+        title="Who are you?"
+        description={`Welcome, ${user.name.split(" ")[0]}. Choose how you'll use the platform.`}
+      >
+        <RoleSelector onConfirm={setRole} />
+      </AuthFrame>
+    );
+  }
 
   return (
-    <div className="mx-auto w-full max-w-xl py-16">
-      <p className="text-xs font-medium tracking-wide text-subtle uppercase">Step {step} of 2</p>
-      <h1 className="mt-1 text-3xl font-bold tracking-tight">
-        {step === 1 ? "Register" : "Who are you?"}
-      </h1>
-      <p className="mt-2 text-sm text-muted">
-        {step === 1
-          ? "Sign in with your school Microsoft account."
-          : `Welcome, ${user!.name.split(" ")[0]}. Choose how you'll use the platform.`}
-      </p>
+    <AuthFrame
+      eyebrow="Register"
+      title="Create your account"
+      description="Use your school email. You'll log in with it next."
+      footer={
+        <>
+          Already have an account?{" "}
+          <Link href="/login" className="font-medium text-accent hover:underline">
+            Log in
+          </Link>
+        </>
+      }
+    >
+      <MicrosoftSignIn />
+      <RegisterForm />
+    </AuthFrame>
+  );
+}
 
-      <Card className="mt-8">
-        {step === 1 ? <MicrosoftSignIn /> : <RoleSelector onConfirm={setRole} />}
-      </Card>
-    </div>
+function RegisterForm() {
+  const router = useRouter();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [role, setRole] = useState<Role | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return setError("Enter your full name.");
+    if (!email.includes("@")) return setError("Enter your school email.");
+    if (password.length < 8) return setError("Use a password of at least 8 characters.");
+    if (password !== confirm) return setError("The two passwords don't match.");
+    if (!role) return setError("Choose Student or Instructor.");
+
+    setError(null);
+    setBusy(true);
+    try {
+      const user = await register({ name: name.trim(), email: email.trim(), password, role });
+      router.push(`/login?registered=1&email=${encodeURIComponent(user.email)}`);
+    } catch (err) {
+      setError((err as Error).message || "Couldn't create your account. Please try again.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+      <TextField
+        label="Full name"
+        name="name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Aditi Sharma"
+        autoComplete="name"
+      />
+      <TextField
+        label="School email"
+        name="email"
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="you@iisc.ac.in"
+        autoComplete="email"
+      />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <TextField
+          label="Password"
+          name="password"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          hint="At least 8 characters"
+          autoComplete="new-password"
+        />
+        <TextField
+          label="Confirm password"
+          name="confirm"
+          type="password"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          autoComplete="new-password"
+        />
+      </div>
+      <div className="space-y-1.5">
+        <span className="block text-xs font-medium text-muted">I am a…</span>
+        <RoleCards value={role} onChange={setRole} compact />
+      </div>
+      <FormError message={error} />
+      <Button type="submit" disabled={busy} className="w-full py-2.5">
+        {busy ? "Creating account…" : "Create account"}
+      </Button>
+    </form>
   );
 }

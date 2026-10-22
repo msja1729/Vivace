@@ -140,7 +140,7 @@ export function AllocationEditor({
           )}
         </div>
 
-        <p className="rounded-lg border border-border bg-white/[0.03] px-4 py-3 text-sm text-muted">
+        <p className="rounded-lg border border-border bg-tint px-4 py-3 text-sm text-muted">
           {examiners.length ? (
             <>
               <span className="text-text">{examiners.length}</span> student{examiners.length === 1 ? "" : "s"} at a time ·{" "}
@@ -162,7 +162,7 @@ export function AllocationEditor({
           {examiners.map((e) => {
             const ids = queue(e.id);
             return (
-              <div key={e.id} className="rounded-xl border border-border bg-white/[0.02]">
+              <div key={e.id} className="rounded-xl border border-border bg-tint">
                 <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
                   <span className="flex min-w-0 items-center gap-2">
                     <Avatar name={e.name} className="h-7 w-7 text-[10px]" />
@@ -219,7 +219,7 @@ export function AllocationEditor({
             <p className="mt-0.5 text-xs text-muted">Every student needs an examiner before the viva can be scheduled.</p>
             <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {unallocated.map((s) => (
-                <li key={s.id} className="flex items-center justify-between gap-2 rounded-lg bg-white/[0.03] px-3 py-1.5">
+                <li key={s.id} className="flex items-center justify-between gap-2 rounded-lg bg-tint px-3 py-1.5">
                   <span className="truncate text-sm">{s.name}</span>
                   {examiners.length > 0 && <MoveSelect studentId={s.id} current={null} />}
                 </li>

@@ -4,15 +4,16 @@ type Variant = "primary" | "accent" | "outline" | "ghost" | "danger";
 type Size = "sm" | "md";
 
 const base =
-  "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition whitespace-nowrap " +
+  "inline-flex items-center justify-center gap-2 rounded-full font-medium transition whitespace-nowrap " +
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent " +
   "disabled:cursor-not-allowed disabled:opacity-50";
 
+// Pill buttons, as in the design: a purple → magenta gradient for the main action.
 const variants: Record<Variant, string> = {
-  primary: "bg-text text-bg hover:bg-white",
+  primary: "brand-gradient text-white shadow-[0_10px_24px_-10px_rgb(178_76_242/0.7)] hover:brightness-110",
   accent:
-    "bg-linear-to-r from-indigo-500 to-violet-500 text-white shadow-[0_8px_24px_-10px_rgb(124_140_255/0.8)] hover:brightness-110",
-  outline: "border border-border-strong bg-white/[0.04] text-text backdrop-blur hover:bg-white/10",
+    "bg-linear-to-r from-[#5b8cf7] to-[#7a5cf5] text-white shadow-[0_10px_24px_-10px_rgb(91_120_247/0.7)] hover:brightness-110",
+  outline: "border border-border-strong bg-tint text-text backdrop-blur hover:bg-raised",
   ghost: "text-muted hover:bg-raised hover:text-text",
   danger: "border border-danger/30 text-danger hover:bg-danger/10",
 };

@@ -250,7 +250,9 @@ def test_no_face_and_multiple_faces():
     m = IntegrityMonitor(LiveConfig())
     types = {c.flag.type for c in run(m, [face(faces=0)] * 20) if c.kind == "open"}
     assert types == {"no_face"}
-    types = {c.flag.type for c in run(m, [face(faces=2)] * 3, t0=10) if c.kind == "open"}
+    opened = lambda changes: {c.flag.type for c in changes if c.kind == "open"}  # noqa: E731
+    assert opened(run(m, [face(faces=2)] * 3, t0=10)) == set()  # under a second: a detector glitch
+    types = {c.flag.type for c in run(m, [face(faces=2)] * 6, t0=11) if c.kind == "open"}
     assert "multiple_faces" in types
 
 
@@ -270,18 +272,55 @@ def test_second_person_from_yolo():
     assert any(c.flag.type == "second_person" for c in run(m, [two] * 3))
 
 
-def test_reading_sweeps():
+def reading_lines(n: int) -> list[FrameObs]:
+    """Reading n lines at 5 fps: a slow scan across (~2 s), then a quick jump back."""
+    line = [-0.3 + 0.6 * i / 9 for i in range(10)] + [-0.3, -0.3]
+    return [face(eye_x=x) for x in line * n]
+
+
+def test_reading_lines():
     m = IntegrityMonitor(LiveConfig())
-    sweep = [face(eye_x=x) for x in (-0.3, 0.0, 0.3, 0.0, -0.3, 0.0, 0.3, 0.0, -0.3, 0.0, 0.3, 0.0, -0.3)]
-    assert any(c.flag.type == "reading_pattern" for c in run(m, sweep, fps=2))
+    assert any(c.flag.type == "reading_pattern" for c in run(m, reading_lines(5)))
+
+
+def test_looking_around_while_talking_is_not_reading():
+    # Quick glances between a few spots on the screen, back and forth, as people do while talking.
+    m = IntegrityMonitor(LiveConfig())
+    spots = [-0.3, 0.0, 0.3, -0.3, 0.3, 0.0, -0.3, 0.0, 0.3, -0.3, 0.3, -0.3]
+    assert run(m, [face(eye_x=x) for x in spots for _ in range(5)]) == []
+
+
+def test_reading_the_question_on_screen_is_not_flagged():
+    m = IntegrityMonitor(LiveConfig())
+    m.pause_reading(until=20)
+    assert run(m, reading_lines(5)) == []  # 12 s of reading, inside the pause
+    assert any(c.flag.type == "reading_pattern" for c in run(m, reading_lines(5), t0=20))
 
 
 def test_lip_sync_mismatch():
     m = IntegrityMonitor(LiveConfig())
-    for i in range(40):
+    for i in range(70):
         m.on_voice(i * 0.1, True)
-    changes = run(m, [face(mouth_open=0.01)] * 20, fps=5, t0=0)
+    changes = run(m, [face(mouth_open=0.01)] * 35, fps=5, t0=0)
     assert any(c.flag.type == "lipsync_mismatch" for c in changes)
+
+
+def test_talking_with_little_jaw_movement_is_not_lip_sync():
+    # Some people barely open their mouth when they talk (lip gap ~0.02-0.07).
+    m = IntegrityMonitor(LiveConfig())
+    for i in range(70):
+        m.on_voice(i * 0.1, True)
+    mouth = [0.02, 0.06, 0.03, 0.07, 0.01, 0.05, 0.04]
+    assert run(m, [face(mouth_open=mouth[i % 7]) for i in range(35)]) == []
+
+
+def test_looking_up_to_think_needs_longer():
+    m = IntegrityMonitor(LiveConfig())
+    assert run(m, [face(eye_y=0.6)] * 40) == []  # 8 s looking up
+    opened = run(m, [face(eye_y=0.6)] * 15, t0=8)
+    assert [c.flag.detail for c in opened if c.kind == "open"] == ["looking up"]
+    m = IntegrityMonitor(LiveConfig())
+    assert any(c.flag.type == "gaze_off_screen" for c in run(m, [face(eye_y=-0.8)] * 20))  # down: 3 s
 
 
 def test_calibration_widens_gaze_bounds():
@@ -296,11 +335,16 @@ def test_calibration_widens_gaze_bounds():
 def test_speaker_check_and_risk():
     m = IntegrityMonitor(LiveConfig())
     assert m.on_speaker_check(0, 3, 0.8) is None
-    change = m.on_speaker_check(5, 8, 0.2)
-    assert change.flag.type == "secondary_speaker" and change.flag.confidence == 0.8
-    risk = m.risk(10)
-    assert risk == pytest.approx(20 * (1 + 3 / 10))
-    assert m.risk(10 + 601) == 0 and m.peak_risk == risk  # outside the rolling window
+    assert m.on_speaker_check(5, 8, 0.4) is None  # a genuine speaker's ordinary score
+    assert m.on_speaker_check(10, 13, 0.1) is None  # one poor match: could be noise
+    assert m.on_speaker_check(15, 18, 0.6) is None  # ...and it was
+    assert m.on_speaker_check(20, 23, 0.2) is None
+    change = m.on_speaker_check(25, 28, 0.1)  # two in a row: another voice
+    assert change.flag.type == "secondary_speaker" and change.flag.confidence == 0.9
+    assert (change.flag.start, change.flag.end) == (20, 28)
+    risk = m.risk(30)
+    assert risk == pytest.approx(20 * (1 + 8 / 10))
+    assert m.risk(30 + 601) == 0 and m.peak_risk == risk  # outside the rolling window
 
 
 # ---------- delivery metrics ----------

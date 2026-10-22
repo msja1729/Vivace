@@ -80,7 +80,7 @@ export function AssignmentForm({
         className="max-w-xs"
       />
 
-      <div className="rounded-xl border border-border bg-white/[0.02] p-4">
+      <div className="rounded-xl border border-border bg-tint p-4">
         <p className="text-xs font-medium text-muted">Grading</p>
         <div role="radiogroup" aria-label="Grading" className="mt-2 inline-flex rounded-lg border border-border-strong p-0.5">
           {[
@@ -94,7 +94,7 @@ export function AssignmentForm({
               aria-checked={graded === o.value}
               onClick={() => setGraded(o.value)}
               className={`rounded-md px-3 py-1.5 text-sm transition ${
-                graded === o.value ? "bg-white/10 font-medium text-text" : "text-muted hover:text-text"
+                graded === o.value ? "bg-raised font-medium text-text" : "text-muted hover:text-text"
               }`}
             >
               {o.label}

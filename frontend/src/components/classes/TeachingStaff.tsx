@@ -123,7 +123,7 @@ function AddTA({ classId, onAdded, onClose }: { classId: string; onAdded: (tas: 
   const shown = q.length >= 3 && results?.query === q ? results.people : null;
 
   return (
-    <div className="mb-4 rounded-xl border border-border bg-white/[0.03] p-4">
+    <div className="mb-4 rounded-xl border border-border bg-tint p-4">
       <div className="flex flex-wrap items-center gap-2">
         <SearchInput value={query} onChange={setQuery} placeholder="Search by IISc email or name" className="max-w-sm" />
         <Button size="sm" variant="ghost" onClick={onClose}>

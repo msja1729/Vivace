@@ -275,6 +275,8 @@ class LiveSession:
         if not text.strip():
             return
         await self.send("student", {"type": "question", "text": text})
+        # Reading the question on screen looks like reading notes: give them time (~3 words a second).
+        self.monitor.pause_reading(self.t() + 4 + len(text.split()) / 3)
         # Typed questions go in the transcript too (spoken ones arrive through speech-to-text).
         await self._add_turn(Speaker.examiner, text, self.t(), self.t(), typed=True)
 
@@ -425,7 +427,7 @@ class LiveSession:
                 asyncio.create_task(self._check_voice(seg))
 
     async def _check_voice(self, seg: audio.Segment) -> None:
-        if seg.end - seg.start < 1.5:
+        if seg.end - seg.start < 2:
             return  # too short for a reliable voice print comparison
         if seg.start < self._examiner_speaking_until:
             return  # overlapping the examiner

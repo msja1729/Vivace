@@ -5,7 +5,7 @@ import { useWorkspace } from "@/lib/workspace";
 import { ActionCard } from "@/components/dashboard/ActionCard";
 import { ClassList } from "@/components/dashboard/ClassList";
 import { FormError } from "@/components/ui/Field";
-import { Loading, PageHeader } from "@/components/ui/Display";
+import { Loading } from "@/components/ui/Display";
 import { DoorIcon, PlusIcon } from "@/components/ui/Icons";
 
 export default function DashboardPage() {
@@ -16,7 +16,14 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-10">
-      <PageHeader eyebrow={`${user.role} dashboard`} title={`Hi, ${user.name.split(" ")[0]}`} />
+      <header className="featured relative overflow-hidden rounded-3xl px-6 py-7 sm:px-8">
+        <span className="pointer-events-none absolute -top-12 right-10 h-40 w-40 rounded-full bg-white/10 blur-2xl" />
+        <p className="text-[11px] font-semibold tracking-[0.2em] text-white/70 uppercase">{user.role} dashboard</p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">Hi, {user.name.split(" ")[0]}</h1>
+        <p className="mt-1.5 text-sm text-white/75">
+          {isInstructor ? "Create a class, set up vivas and review reports." : "Join your classes and take your vivas here."}
+        </p>
+      </header>
 
       {/* Instructors: Create + Join. Students: Join only. */}
       <div className="grid gap-3 md:grid-cols-2">

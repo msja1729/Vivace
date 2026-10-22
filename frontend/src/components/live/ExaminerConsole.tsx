@@ -312,7 +312,7 @@ export function ExaminerConsole({ cls, viva, student }: { cls: ClassRoom; viva: 
             ) : (
               <ul className="space-y-3">
                 {s.suggestions.map((q, i) => (
-                  <li key={i} className="rounded-lg border border-border bg-white/[0.02] p-3">
+                  <li key={i} className="rounded-lg border border-border bg-tint p-3">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <Badge tone={q.kind === "devils_advocate" ? "warning" : "accent"}>{KIND_LABEL[q.kind] ?? q.kind}</Badge>
                       {q.criterion && <span className="text-xs text-subtle">{q.criterion}</span>}

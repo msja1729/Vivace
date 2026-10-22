@@ -6,8 +6,8 @@ import type { Role, User } from "@/types";
 import { useAuth } from "@/lib/auth/AuthProvider";
 
 /**
- * Client-side page guard. Sends signed-out users to /register and users with
- * the wrong role to /dashboard. (Real protection will also live on the backend.)
+ * Client-side page guard. Sends signed-out users to /login, users without a role to /register
+ * (the role step), and users with the wrong role to /dashboard. (The backend checks too.)
  */
 export function RequireAuth({
   role,
@@ -23,7 +23,8 @@ export function RequireAuth({
 
   useEffect(() => {
     if (loading) return;
-    if (!user?.role) router.replace("/register");
+    if (!user) router.replace("/login");
+    else if (!user.role) router.replace("/register");
     else if (role && user.role !== role) router.replace("/dashboard");
   }, [loading, user, role, router]);
 

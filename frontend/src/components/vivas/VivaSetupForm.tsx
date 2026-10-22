@@ -398,7 +398,7 @@ function CriteriaEditor({ criteria, onChange }: { criteria: Criterion[]; onChang
       ) : (
         <ul className="space-y-3">
           {criteria.map((c, i) => (
-            <li key={i} className="grid gap-2 rounded-xl border border-border bg-white/[0.02] p-3 md:grid-cols-[1fr_2fr_auto_auto] md:items-start">
+            <li key={i} className="grid gap-2 rounded-xl border border-border bg-tint p-3 md:grid-cols-[1fr_2fr_auto_auto] md:items-start">
               <input
                 value={c.name}
                 onChange={(e) => update(i, { name: e.target.value })}

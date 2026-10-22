@@ -5,10 +5,11 @@ import { siteConfig } from "@/config/site";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { Button } from "@/components/ui/Button";
 import { Logo } from "@/components/ui/Logo";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
 /** Top bar for the public pages. Signed-in pages use the sidebar instead. */
 export function Navbar() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const signedIn = Boolean(user?.role);
 
   return (
@@ -22,7 +23,19 @@ export function Navbar() {
             </Link>
           ))}
         </nav>
-        {signedIn ? <Button href="/dashboard">Open dashboard</Button> : <Button href="/register">Register</Button>}
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+          {loading ? null : signedIn ? (
+            <Button href="/dashboard">Open dashboard</Button>
+          ) : (
+            <>
+              <Button href="/login" variant="ghost" className="hidden sm:inline-flex">
+                Log in
+              </Button>
+              <Button href="/register">Register</Button>
+            </>
+          )}
+        </div>
       </div>
     </header>
   );

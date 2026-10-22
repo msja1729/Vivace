@@ -118,7 +118,7 @@ export function VivaStatsPanel({ viva }: { viva: Viva }) {
         ) : (
           <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {chosen.map((s) => (
-              <li key={s.value} className="rounded-xl border border-border bg-white/[0.03] p-4">
+              <li key={s.value} className="rounded-xl border border-border bg-tint p-4">
                 <p className="text-sm font-medium">{s.label}</p>
                 <p className="mt-0.5 text-xs text-muted">{s.description}</p>
                 <div className="mt-3 text-xs text-subtle">
@@ -220,7 +220,7 @@ export function VivaStatsPanel({ viva }: { viva: Viva }) {
                   </tr>
                   {openFor === r.student.id && (
                     <tr>
-                      <td colSpan={viva.conductedBy === "staff" ? 9 : 8} className="bg-white/[0.02] px-5 py-4">
+                      <td colSpan={viva.conductedBy === "staff" ? 9 : 8} className="bg-tint px-5 py-4">
                         <VivaFeedbackForm
                           vivaId={viva.id}
                           row={r}

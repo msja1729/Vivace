@@ -21,6 +21,46 @@ const ROLES: { value: Role; title: string; icon: React.ReactNode; abilities: str
   },
 ];
 
+/** The Student / Instructor choice, as two cards. */
+export function RoleCards({
+  value,
+  onChange,
+  compact = false,
+}: {
+  value: Role | null;
+  onChange: (role: Role) => void;
+  compact?: boolean;
+}) {
+  return (
+    <div role="radiogroup" aria-label="Choose your role" className="grid gap-3 sm:grid-cols-2">
+      {ROLES.map((r) => {
+        const active = value === r.value;
+        return (
+          <button
+            key={r.value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(r.value)}
+            className={`flex flex-col items-start rounded-2xl border bg-tint text-left transition hover:bg-raised ${
+              compact ? "p-4" : "p-5"
+            } ${active ? "border-accent ring-2 ring-accent/30" : "border-border-strong"}`}
+          >
+            <span className={active ? "text-accent" : "text-muted"}>{r.icon}</span>
+            <h3 className={`font-semibold ${compact ? "mt-2" : "mt-3 text-lg"}`}>{r.title}</h3>
+            <ul className={`mt-1.5 space-y-0.5 text-muted ${compact ? "text-xs" : "text-sm"}`}>
+              {r.abilities.map((a) => (
+                <li key={a}>• {a}</li>
+              ))}
+            </ul>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Microsoft sign-ins pick their role on this step, after signing in. */
 export function RoleSelector({ onConfirm }: { onConfirm: (role: Role) => Promise<void> }) {
   const [selected, setSelected] = useState<Role | null>(null);
   const [busy, setBusy] = useState(false);
@@ -40,31 +80,7 @@ export function RoleSelector({ onConfirm }: { onConfirm: (role: Role) => Promise
 
   return (
     <div className="space-y-6">
-      <div role="radiogroup" aria-label="Choose your role" className="grid gap-4 sm:grid-cols-2">
-        {ROLES.map((r) => {
-          const active = selected === r.value;
-          return (
-            <button
-              key={r.value}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              onClick={() => setSelected(r.value)}
-              className={`flex flex-col items-start rounded-xl border bg-white/[0.03] p-5 text-left transition hover:bg-raised ${
-                active ? "border-accent ring-2 ring-accent/30" : "border-border-strong"
-              }`}
-            >
-              <span className={active ? "text-accent" : "text-muted"}>{r.icon}</span>
-              <h3 className="mt-3 text-lg font-semibold">{r.title}</h3>
-              <ul className="mt-2 space-y-1 text-sm text-muted">
-                {r.abilities.map((a) => (
-                  <li key={a}>• {a}</li>
-                ))}
-              </ul>
-            </button>
-          );
-        })}
-      </div>
+      <RoleCards value={selected} onChange={setSelected} />
       <FormError message={error} />
       <Button className="w-full" disabled={!selected || busy} onClick={confirm}>
         {busy ? "Saving…" : "Continue"}

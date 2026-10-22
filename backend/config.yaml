@@ -7,17 +7,18 @@ vision:
   yolo_conf: 0.5
 
 integrity:
-  gaze_off_seconds: 3       # looking off-screen longer than this is flagged
+  gaze_off_seconds: 3       # looking off-screen (sideways / down) longer than this is flagged
+  gaze_up_seconds: 10       # looking up is usually thinking, so it needs longer
   head_yaw_deg: 30
   head_pitch_deg: 20
   head_turn_seconds: 3
-  reading_sweeps: 3         # left-right sweeps within reading_window_seconds = "reading"
-  reading_window_seconds: 10
+  reading_sweeps: 3         # lines read (slow scan across, quick jump back) within the window = "reading"
+  reading_window_seconds: 12
   no_face_seconds: 3
   object_frames: 3          # a prohibited object in >= this many of the last 5 frames
-  objects: [cell phone, laptop, tv, book]
-  speaker_similarity: 0.5   # voice similarity to the enrolled voice print below this = another speaker
-  lipsync_seconds: 2        # speech heard while the mouth is still, longer than this
+  objects: [cell phone, laptop, book]   # not "tv": a TV / monitor in the room is normal
+  speaker_similarity: 0.25  # voice match below this, twice in a row = another speaker
+  lipsync_seconds: 4        # speech heard while the lips stay closed, longer than this
 
 # Cheating Risk Score: sum over flags of weight * (1 + seconds / 10), capped at 100,
 # over the last `risk_window_seconds` (the stored session score is the peak).

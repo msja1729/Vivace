@@ -56,7 +56,7 @@ export function StatTile({
 }) {
   const color = tone ? { success: "text-success", warning: "text-warning", danger: "text-danger", accent: "text-accent" }[tone] : "";
   return (
-    <div className="panel rounded-xl p-4">
+    <div className="panel rounded-2xl p-4">
       <p className="text-xs text-muted">{label}</p>
       <p className={`mt-1 text-2xl font-bold tabular-nums ${color}`}>{value}</p>
       {hint && <p className="mt-0.5 text-xs text-subtle">{hint}</p>}

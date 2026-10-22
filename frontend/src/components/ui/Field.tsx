@@ -1,7 +1,7 @@
 // Labelled form inputs.
 
 export const inputClass =
-  "w-full rounded-lg border border-border-strong bg-black/25 px-3 py-2 text-sm text-text " +
+  "w-full rounded-lg border border-border-strong bg-input px-3 py-2 text-sm text-text " +
   "placeholder:text-subtle outline-none transition focus:border-accent disabled:opacity-60";
 
 interface FieldProps extends React.InputHTMLAttributes<HTMLInputElement> {

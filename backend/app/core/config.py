@@ -45,9 +45,10 @@ class Settings(BaseSettings):
     snapshot_retention_days: int = 30
     live_warm_up: bool = True  # load the models at startup (in the background)
 
-    # "dev" also allows the name + email login (no Microsoft) for local testing.
+    # "password" = register / log in with email + password (plus Microsoft, if configured).
+    # "dev" = also the password-less name + email login, for automated tests only — never on a public server.
     # "microsoft" = only "Sign in with Microsoft" (Entra ID).
-    auth_mode: Literal["dev", "microsoft"] = "dev"
+    auth_mode: Literal["password", "dev", "microsoft"] = "password"
 
     # Microsoft Entra ID app registration (Azure portal → App registrations).
     # Sign in with Microsoft is enabled when azure_client_id is set.

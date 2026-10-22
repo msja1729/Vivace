@@ -16,16 +16,17 @@ class VisionConfig(BaseModel):
 
 class IntegrityConfig(BaseModel):
     gaze_off_seconds: float = 3
+    gaze_up_seconds: float = 10  # looking up (thinking) needs longer
     head_yaw_deg: float = 30
     head_pitch_deg: float = 20
     head_turn_seconds: float = 3
-    reading_sweeps: int = 3
-    reading_window_seconds: float = 10
+    reading_sweeps: int = 3  # lines read (slow across, quick back) within the window
+    reading_window_seconds: float = 12
     no_face_seconds: float = 3
     object_frames: int = 3
-    objects: list[str] = ["cell phone", "laptop", "tv", "book"]
-    speaker_similarity: float = 0.5
-    lipsync_seconds: float = 2
+    objects: list[str] = ["cell phone", "laptop", "book"]
+    speaker_similarity: float = 0.25
+    lipsync_seconds: float = 4
 
 
 class MasteryWeights(BaseModel):

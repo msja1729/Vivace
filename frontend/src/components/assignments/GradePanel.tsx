@@ -79,7 +79,7 @@ export function GradePanel({
   }
 
   return (
-    <form onSubmit={handleReturn} className="space-y-2 rounded-xl border border-border bg-white/[0.02] p-3">
+    <form onSubmit={handleReturn} className="space-y-2 rounded-xl border border-border bg-tint p-3">
       <div className="flex flex-wrap items-center gap-2">
         {totalMarks !== null && (
           <label className="flex items-center gap-2 text-sm">

@@ -4,8 +4,8 @@
 //      and exchanges it with our backend (which verifies it) for our own session token.
 // The user never types a name or email; both come from their Microsoft account.
 //
-// Needs NEXT_PUBLIC_AZURE_CLIENT_ID (and the tenant) in .env.local. Without it, the
-// register page falls back to the development sign-in (devSignIn) for local testing.
+// Needs NEXT_PUBLIC_AZURE_CLIENT_ID (and the tenant) in .env.local. Without it, only the
+// email + password register / log in forms are shown.
 
 import { PublicClientApplication } from "@azure/msal-browser";
 import type { User } from "@/types";
@@ -58,10 +58,3 @@ export function finishMicrosoftSignIn(): Promise<SignInResult | null> {
   return finishing;
 }
 
-/** Development only (no Microsoft app configured): sign in with a typed name + school email. */
-export function devSignIn(account: { name: string; email: string }): Promise<SignInResult> {
-  return api<SignInResult>("/auth/dev-login", {
-    method: "POST",
-    body: { name: account.name.trim(), email: account.email.trim() },
-  });
-}

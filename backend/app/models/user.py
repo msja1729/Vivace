@@ -22,4 +22,6 @@ class User(Base):
     role: Mapped[Role | None] = mapped_column(
         Enum(Role, native_enum=False), default=None
     )  # chosen at registration
+    # scrypt hash for email + password accounts; None for Microsoft-only accounts
+    password_hash: Mapped[str | None] = mapped_column(String(255), default=None)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
