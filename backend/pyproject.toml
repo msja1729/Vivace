@@ -1,0 +1,49 @@
+[project]
+name = "viva-backend"
+version = "0.1.0"
+description = "Backend API for the AI Viva & Proctoring System"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.20.0",
+    "email-validator>=2.3.0",
+    "fastapi>=0.143.0",
+    "pydantic-settings>=2.15.0",
+    "pyjwt[crypto]>=2.15.1",
+    "python-multipart>=0.0.32",
+    "sqlalchemy>=2",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[project.optional-dependencies]
+live = [
+    "anthropic>=1.15.0",
+    "faster-whisper>=1.2.1",
+    "mediapipe>=1.1.1",
+    "numpy>=2.5.4",
+    "opencv-python-headless>=5.0.0.93",
+    "pypdf>=6.20.1",
+    "pyyaml>=6.0.3",
+    "sentence-transformers>=6.1.0",
+    "speechbrain>=1.1.2",
+    "ultralytics>=8.4.178",
+    "webrtcvad-wheels>=2.0.14.post1",
+]
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.13.1",
+    "pytest>=9.1.1",
+    "ruff>=0.17.0",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]  # line length is handled by the formatter
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

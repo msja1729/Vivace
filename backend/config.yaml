@@ -1,0 +1,40 @@
+# Live viva engines: detector thresholds and score weights.
+# Every value is optional; anything left out uses the default in app/live/config.py.
+
+vision:
+  fps: 5                    # frames per second the student's browser sends for analysis
+  yolo_imgsz: 320           # smaller = faster object detection on CPU
+  yolo_conf: 0.5
+
+integrity:
+  gaze_off_seconds: 3       # looking off-screen longer than this is flagged
+  head_yaw_deg: 30
+  head_pitch_deg: 20
+  head_turn_seconds: 3
+  reading_sweeps: 3         # left-right sweeps within reading_window_seconds = "reading"
+  reading_window_seconds: 10
+  no_face_seconds: 3
+  object_frames: 3          # a prohibited object in >= this many of the last 5 frames
+  objects: [cell phone, laptop, tv, book]
+  speaker_similarity: 0.5   # voice similarity to the enrolled voice print below this = another speaker
+  lipsync_seconds: 2        # speech heard while the mouth is still, longer than this
+
+# Cheating Risk Score: sum over flags of weight * (1 + seconds / 10), capped at 100,
+# over the last `risk_window_seconds` (the stored session score is the peak).
+risk_weights:
+  gaze_off_screen: 6
+  head_turned: 5
+  reading_pattern: 10
+  no_face: 8
+  multiple_faces: 20
+  prohibited_object: 20
+  second_person: 25
+  secondary_speaker: 20
+  lipsync_mismatch: 12
+risk_window_seconds: 600
+
+# Conceptual Mastery Score per answer, averaged over answers.
+mastery_weights:
+  correctness: 0.5
+  similarity: 0.3
+  fluency: 0.2
