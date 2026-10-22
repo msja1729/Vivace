@@ -269,7 +269,7 @@ def test_phone_needs_3_of_5_frames():
 def test_second_person_from_yolo():
     m = IntegrityMonitor(LiveConfig())
     two = face(objects_ok=True, persons=2)
-    assert any(c.flag.type == "second_person" for c in run(m, [two] * 3))
+    assert any(c.flag.type == "second_person" for c in run(m, [two] * 12))
 
 
 def reading_lines(n: int) -> list[FrameObs]:

@@ -6,31 +6,6 @@ from dataclasses import dataclass, field
 from app.live import engines
 from app.live.config import live_config
 
-# Face mesh points sent to the examiner's overlay (face outline, eyes, lips, irises).
-_OVERLAY_SETS = (
-    "FACE_LANDMARKS_FACE_OVAL",
-    "FACE_LANDMARKS_LEFT_EYE",
-    "FACE_LANDMARKS_RIGHT_EYE",
-    "FACE_LANDMARKS_LIPS",
-)
-_overlay: tuple[list[int], list[tuple[int, int]]] | None = None
-
-
-def overlay_layout() -> tuple[list[int], list[tuple[int, int]]]:
-    """(landmark indices we send, segments as pairs of positions in that list)."""
-    global _overlay
-    if _overlay is None:
-        try:
-            from mediapipe.tasks.python.vision import FaceLandmarksConnections as C
-
-            pairs = [(c.start, c.end) for name in _OVERLAY_SETS for c in getattr(C, name)]
-        except Exception:  # noqa: BLE001 — overlay is cosmetic
-            pairs = []
-        indices = sorted({i for p in pairs for i in p} | {468, 473})  # + iris centres
-        pos = {idx: n for n, idx in enumerate(indices)}
-        _overlay = (indices, [(pos[a], pos[b]) for a, b in pairs])
-    return _overlay
-
 
 @dataclass
 class FrameObs:
@@ -41,8 +16,6 @@ class FrameObs:
     eye_x: float | None = None  # -1..1, eyes looking towards the student's right (-) / left (+)
     eye_y: float | None = None  # -1..1, down (-) / up (+)
     mouth_open: float | None = None  # ~0..1: jawOpen blendshape or inner-lip gap, whichever is larger
-    mesh: list[list[float]] = field(default_factory=list)  # overlay points, 0..1
-    eye_center: list[float] | None = None
     objects: list[dict] = field(default_factory=list)  # {label, conf, box}
     persons: int | None = None  # people YOLO sees (None = detector off)
     face_ok: bool = False  # face detector ran
@@ -106,10 +79,6 @@ def analyze(jpeg: bytes, run_objects: bool = True) -> FrameObs:
                 eyes = math.dist((lms[33].x, lms[33].y), (lms[263].x, lms[263].y)) or 1.0
                 lip_gap = math.dist((lms[13].x, lms[13].y), (lms[14].x, lms[14].y)) / eyes
                 obs.mouth_open = max(b.get("jawOpen", 0), lip_gap)
-            indices, _ = overlay_layout()
-            obs.mesh = [[round(lms[i].x, 4), round(lms[i].y, 4)] for i in indices if i < len(lms)]
-            if len(lms) > 473:
-                obs.eye_center = [(lms[468].x + lms[473].x) / 2, (lms[468].y + lms[473].y) / 2]
 
     model = engines.yolo() if run_objects else None
     if model is not None:
@@ -132,6 +101,6 @@ def analyze(jpeg: bytes, run_objects: bool = True) -> FrameObs:
                     "box": [x1 / w, y1 / h, (x2 - x1) / w, (y2 - y1) / h],
                 }
             )
-            if label == "person":
+            if label == "person" and conf >= cfg.integrity.person_conf:
                 obs.persons += 1
     return obs

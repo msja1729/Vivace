@@ -30,7 +30,7 @@ from app.live.evaluation import context as ctx
 from app.live.evaluation.llm import LLMError, get_llm, llm_error
 from app.live.integrity import audio
 from app.live.integrity.rules import LABELS, Change, Flag, IntegrityMonitor
-from app.live.integrity.vision import FrameObs, analyze, overlay_layout
+from app.live.integrity.vision import FrameObs, analyze
 from app.models import SessionStatus, Speaker, Viva, VivaEvent, VivaSession, VivaTurn
 
 log = logging.getLogger("live.session")
@@ -193,7 +193,6 @@ class LiveSession:
             }
             if who == "student":
                 return base | {"examinerOnline": self.examiner is not None}
-            _, segments = overlay_layout()
             return base | {
                 "studentOnline": self.student is not None,
                 "t": self.t(),
@@ -201,7 +200,6 @@ class LiveSession:
                 "mastery": self.mastery,
                 "engines": engine_status(),
                 "llm": llm_error() or ("ready" if get_llm() else "unavailable"),
-                "meshSegments": segments,
                 "events": [_event_out(e) for e in s.events],
                 "turns": [_turn_out(t) for t in s.turns],
                 "suggestions": self.suggestions,
@@ -334,21 +332,6 @@ class LiveSession:
                     await self._apply(self.monitor.on_frame(t, obs), jpeg)
                 except Exception:  # noqa: BLE001 — keep analysing the next frames
                     log.exception("Recording a flag failed")
-            await self.to_examiner(
-                {
-                    "type": "frame",
-                    "t": t,
-                    "faces": obs.faces,
-                    "faceBoxes": obs.face_boxes,
-                    "mesh": obs.mesh,
-                    "eyeCenter": obs.eye_center,
-                    "eyeX": obs.eye_x,
-                    "eyeY": obs.eye_y,
-                    "yaw": obs.yaw,
-                    "pitch": obs.pitch,
-                    "objects": obs.objects,
-                }
-            )
 
     # ---------- flags ----------
 

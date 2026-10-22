@@ -24,6 +24,9 @@ class IntegrityConfig(BaseModel):
     reading_window_seconds: float = 12
     no_face_seconds: float = 3
     object_frames: int = 3
+    # A second person counts only above this detector confidence. The student's own shadow on the
+    # wall scores ~0.45-0.6; the student ~0.9, and a real person in view well above 0.65.
+    person_conf: float = 0.65
     objects: list[str] = ["cell phone", "laptop", "book"]
     speaker_similarity: float = 0.25
     lipsync_seconds: float = 4

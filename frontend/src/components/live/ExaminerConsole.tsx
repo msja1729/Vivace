@@ -10,9 +10,10 @@ import { useAuth } from "@/lib/auth/AuthProvider";
 import { Button } from "@/components/ui/Button";
 import { Section } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Display";
-import { Checkbox, FormError, TextAreaField, inputClass } from "@/components/ui/Field";
+import { FormError, TextAreaField, inputClass } from "@/components/ui/Field";
 import { ChevronLeftIcon, MicIcon, PlayIcon, SparkleIcon, StopIcon } from "@/components/ui/Icons";
-import { EventList, OverlayVideo, ScoreMeter, Transcript, clock, type FrameOverlay } from "./LiveParts";
+import { EventList, ScoreMeter, Transcript, clock } from "./LiveParts";
+import { DeviceCheck, MicMeter, RemoteVideo } from "./Media";
 
 const KIND_LABEL: Record<Suggestion["kind"], string> = {
   opening: "Opening",
@@ -35,7 +36,6 @@ interface RoomState {
   suggestionsLoading: boolean;
   engines: Record<string, EngineStatus>;
   llm: string;
-  meshSegments: number[][];
   calibration: string | null;
 }
 
@@ -54,21 +54,20 @@ const EMPTY: RoomState = {
   suggestionsLoading: false,
   engines: {},
   llm: "",
-  meshSegments: [],
   calibration: null,
 };
 
-/** The examiner's live dashboard for one student: video call with overlays, scores, transcript,
- * integrity flags and the AI Co-Pilot; then the result form. */
+/** The examiner's live dashboard for one student: a device check, then the video call, scores,
+ * transcript, integrity flags and the AI Co-Pilot; then the result form. The AI watches the video on
+ * the server; the examiner sees it clean. */
 export function ExaminerConsole({ cls, viva, student }: { cls: ClassRoom; viva: Viva; student: Person }) {
   const { user } = useAuth();
   const [local, setLocal] = useState<MediaStream | null>(null);
+  const [devicesChecked, setDevicesChecked] = useState(false);
   const [remote, setRemote] = useState<MediaStream | null>(null);
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [conn, setConn] = useState<{ state: "connecting" | "open" | "closed"; reason?: string }>({ state: "connecting" });
   const [s, setS] = useState<RoomState>(EMPTY);
-  const [overlay, setOverlay] = useState<FrameOverlay | null>(null);
-  const [showOverlay, setShowOverlay] = useState(true);
   const [micOn, setMicOn] = useState(true);
   const [question, setQuestion] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -93,7 +92,6 @@ export function ExaminerConsole({ cls, viva, student }: { cls: ClassRoom; viva: 
           suggestionsError: (m.suggestionsError as string | null) ?? null,
           engines: (m.engines as Record<string, EngineStatus>) ?? p.engines,
           llm: (m.llm as string) ?? p.llm,
-          meshSegments: (m.meshSegments as number[][]) ?? p.meshSegments,
         }));
         break;
       case "presence":
@@ -109,9 +107,6 @@ export function ExaminerConsole({ cls, viva, student }: { cls: ClassRoom; viva: 
           studentSpeaking: Boolean(m.studentSpeaking),
           status: m.status as SessionState,
         }));
-        break;
-      case "frame":
-        setOverlay(m as unknown as FrameOverlay);
         break;
       case "event": {
         const e = m.event as IntegrityEvent;
@@ -142,42 +137,45 @@ export function ExaminerConsole({ cls, viva, student }: { cls: ClassRoom; viva: 
     }
   }
 
-  // Camera + mic, then the room.
+  // 1. Camera + mic. Switching devices in the check replaces the stream (and stops the old one).
   useEffect(() => {
-    let stream: MediaStream | null = null;
-    let stopAudio: (() => void) | null = null;
     let cancelled = false;
-    (async () => {
-      try {
-        stream = await openCameraAndMic();
-      } catch {
-        setMediaError("Allow camera and microphone access so the student can see and hear you.");
-        return;
-      }
-      if (cancelled) return stopStream(stream);
-      setLocal(stream);
-      const r = new LiveRoom(viva.id, student.id, "examiner", stream, {
-        onMessage: (m) => apply(m),
-        onRemoteStream: setRemote,
-        onConnection: (state, reason) => setConn({ state, reason }),
-      });
-      room.current = r;
-      r.connect();
-      // Your voice goes to the transcript too (questions are paired with the student's answers).
-      stopAudio = await streamAudio(stream, r).catch(() => null);
-    })();
+    openCameraAndMic().then(
+      (stream) => (cancelled ? stopStream(stream) : setLocal(stream)),
+      () => setMediaError("Allow camera and microphone access so the student can see and hear you."),
+    );
     return () => {
       cancelled = true;
-      stopAudio?.();
-      room.current?.close();
-      room.current = null;
-      stopStream(stream);
     };
-  }, [viva.id, student.id]);
+  }, []);
+  useEffect(() => () => stopStream(local), [local]);
+
+  // 2. Once the devices are checked: the room, and your voice to the transcript too
+  //    (questions are paired with the student's answers).
+  useEffect(() => {
+    if (!devicesChecked || !local) return;
+    let stopAudio: (() => void) | null = null;
+    const r = new LiveRoom(viva.id, student.id, "examiner", local, {
+      onMessage: (m) => apply(m),
+      onRemoteStream: setRemote,
+      onConnection: (state, reason) => setConn({ state, reason }),
+    });
+    room.current = r;
+    r.connect();
+    void streamAudio(local, r).then(
+      (stop) => (stopAudio = stop),
+      () => {},
+    );
+    return () => {
+      stopAudio?.();
+      r.close();
+      room.current = null;
+    };
+  }, [devicesChecked, local, viva.id, student.id]);
 
   useEffect(() => {
     if (selfView.current) selfView.current.srcObject = local;
-  }, [local]);
+  }, [local, devicesChecked]); // the self-view mounts when the device check is done
 
   const send = (m: LiveMessage) => room.current?.send(m);
   const ask = (text: string) => {
@@ -187,6 +185,31 @@ export function ExaminerConsole({ cls, viva, student }: { cls: ClassRoom; viva: 
   };
 
   const examinerName = user?.name ?? "Examiner";
+
+  if (!devicesChecked) {
+    return (
+      <div className="space-y-5">
+        <Link
+          href={`/classes/${cls.id}/vivas/${viva.id}`}
+          className="inline-flex items-center gap-1 text-xs text-subtle transition hover:text-text"
+        >
+          <ChevronLeftIcon className="h-3.5 w-3.5" /> {viva.title} · {student.name}
+        </Link>
+        <FormError message={mediaError} />
+        {local ? (
+          <DeviceCheck
+            stream={local}
+            onStream={setLocal}
+            onReady={() => setDevicesChecked(true)}
+            readyLabel="Join the live room"
+            tips={<p className="text-sm text-muted">Make sure the student will hear you: speak and watch the bar move.</p>}
+          />
+        ) : (
+          !mediaError && <p className="text-sm text-muted">Opening your camera and microphone…</p>
+        )}
+      </div>
+    );
+  }
   const engineProblems = Object.values(s.engines).filter((e) => e.state === "error");
 
   return (
@@ -237,7 +260,7 @@ export function ExaminerConsole({ cls, viva, student }: { cls: ClassRoom; viva: 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]">
         <div className="space-y-5">
           <div className="relative">
-            <OverlayVideo stream={remote} overlay={overlay} segments={s.meshSegments} show={showOverlay} />
+            <RemoteVideo stream={remote}>
             {!remote && (
               <p className="absolute inset-0 grid place-items-center text-sm text-muted">
                 {s.studentOnline ? "Connecting video…" : "The student's video appears here."}
@@ -250,6 +273,7 @@ export function ExaminerConsole({ cls, viva, student }: { cls: ClassRoom; viva: 
               muted
               className="absolute right-3 bottom-3 w-36 -scale-x-100 rounded-lg border border-border-strong bg-black"
             />
+            </RemoteVideo>
           </div>
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted">
             <Button
@@ -264,7 +288,7 @@ export function ExaminerConsole({ cls, viva, student }: { cls: ClassRoom; viva: 
             >
               <MicIcon className="h-3.5 w-3.5" /> {micOn ? "Mute mic" : "Unmute mic"}
             </Button>
-            <Checkbox label="Show AI overlays" checked={showOverlay} onChange={(e) => setShowOverlay(e.target.checked)} />
+            <MicMeter stream={local} muted={!micOn} />
             <span className="tabular-nums">Vision {s.fps.toFixed(1)} fps</span>
             {s.studentSpeaking && <Badge tone="accent">Student speaking</Badge>}
             {engineProblems.map((e) => (

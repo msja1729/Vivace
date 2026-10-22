@@ -16,6 +16,7 @@ integrity:
   reading_window_seconds: 12
   no_face_seconds: 3
   object_frames: 3          # a prohibited object in >= this many of the last 5 frames
+  person_conf: 0.65         # a second person counts only above this confidence (shadows score ~0.5)
   objects: [cell phone, laptop, book]   # not "tv": a TV / monitor in the room is normal
   speaker_similarity: 0.25  # voice match below this, twice in a row = another speaker
   lipsync_seconds: 4        # speech heard while the lips stay closed, longer than this

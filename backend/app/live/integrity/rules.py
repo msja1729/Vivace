@@ -111,7 +111,7 @@ class IntegrityMonitor:
         self._faces = _Condition("multiple_faces", 1.0)  # a whole second, not a detector glitch
         self._reading = _Condition("reading_pattern", 0)
         self._lipsync = _Condition("lipsync_mismatch", i.lipsync_seconds)
-        self._person = _Condition("second_person", 0)
+        self._person = _Condition("second_person", 1.5)  # stays a while; a flickering shadow doesn't
         self._objects = {label: _Condition("prohibited_object", 0) for label in i.objects}
 
         self._recent_objects: deque[set[str]] = deque(maxlen=5)

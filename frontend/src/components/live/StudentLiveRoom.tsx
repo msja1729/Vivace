@@ -3,14 +3,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { StudentViva } from "@/types";
-import { listDevices, openCameraAndMic, stopStream, streamAudio, streamFrames } from "@/lib/live/media";
+import { openCameraAndMic, stopStream, streamAudio, streamFrames } from "@/lib/live/media";
 import { LiveRoom, type LiveMessage } from "@/lib/live/room";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Display";
-import { Checkbox, FormError, inputClass } from "@/components/ui/Field";
+import { Checkbox, FormError } from "@/components/ui/Field";
 import { MicIcon, VideoIcon } from "@/components/ui/Icons";
+import { DeviceCheck, RemoteVideo } from "./Media";
 
 type Step = "consent" | "devices" | "calibrate" | "room" | "ended";
 const CORNERS = ["top-left", "top-right", "bottom-right", "bottom-left"] as const;
@@ -37,7 +38,20 @@ export function StudentLiveRoom({ v, onEnded }: { v: StudentViva; onEnded: () =>
 
   if (step === "consent") return <Consent examiner={v.examiner?.name} onAgree={openDevices} error={error} />;
   if (step === "devices" && stream)
-    return <DeviceCheck stream={stream} onStream={setStream} onReady={() => setStep("calibrate")} />;
+    return (
+      <DeviceCheck
+        stream={stream}
+        onStream={setStream}
+        onReady={() => setStep("calibrate")}
+        readyLabel="Continue to calibration"
+        tips={
+          <ul className="space-y-1 text-sm text-muted">
+            <li>Sit facing the screen, with your whole face visible and lit from the front.</li>
+            <li>Clear your desk: no phone, books or second screen in view. Be alone in the room.</li>
+          </ul>
+        }
+      />
+    );
   if (stream && (step === "calibrate" || step === "room"))
     return (
       <Room
@@ -78,125 +92,6 @@ function Consent({ examiner, onAgree, error }: { examiner?: string; onAgree: () 
   );
 }
 
-function DeviceCheck({
-  stream,
-  onStream,
-  onReady,
-}: {
-  stream: MediaStream;
-  onStream: (s: MediaStream) => void;
-  onReady: () => void;
-}) {
-  const video = useRef<HTMLVideoElement>(null);
-  const [level, setLevel] = useState(0);
-  const [heard, setHeard] = useState(false);
-  const [silentLong, setSilentLong] = useState(false);
-  const [devices, setDevices] = useState<{ mics: MediaDeviceInfo[]; cameras: MediaDeviceInfo[] }>({ mics: [], cameras: [] });
-  const [error, setError] = useState<string | null>(null);
-  const audioId = stream.getAudioTracks()[0]?.getSettings().deviceId ?? "";
-  const videoId = stream.getVideoTracks()[0]?.getSettings().deviceId ?? "";
-
-  useEffect(() => {
-    void listDevices().then(setDevices);
-  }, []);
-
-  useEffect(() => {
-    if (video.current) video.current.srcObject = stream;
-    const ctx = new AudioContext();
-    void ctx.resume();
-    const analyser = ctx.createAnalyser();
-    ctx.createMediaStreamSource(stream).connect(analyser);
-    const data = new Uint8Array(analyser.fftSize);
-    let frame = 0;
-    const tick = () => {
-      analyser.getByteTimeDomainData(data);
-      let peak = 0;
-      for (const x of data) peak = Math.max(peak, Math.abs(x - 128));
-      setLevel(peak / 128);
-      if (peak / 128 > 0.08) setHeard(true);
-      frame = requestAnimationFrame(tick);
-    };
-    tick();
-    // No sound at all for a while usually means a silent (virtual) input is selected.
-    const hint = setTimeout(() => setSilentLong(true), 5000);
-    return () => {
-      cancelAnimationFrame(frame);
-      clearTimeout(hint);
-      void ctx.close();
-    };
-  }, [stream]);
-
-  async function switchTo(choice: { audioId?: string; videoId?: string }) {
-    setError(null);
-    try {
-      const next = await openCameraAndMic({ audioId: choice.audioId ?? audioId, videoId: choice.videoId ?? videoId });
-      setHeard(false);
-      setSilentLong(false);
-      onStream(next);
-    } catch {
-      setError("Couldn't open that device. It may be in use by another app.");
-    }
-  }
-
-  return (
-    <Card className="mx-auto max-w-2xl space-y-4">
-      <h2 className="text-lg font-semibold">Check your camera and microphone</h2>
-      <video ref={video} autoPlay playsInline muted className="w-full -scale-x-100 rounded-lg bg-black" />
-      <ul className="space-y-1 text-sm text-muted">
-        <li>Sit facing the screen, with your whole face visible and lit from the front.</li>
-        <li>Clear your desk: no phone, books or second screen in view. Be alone in the room.</li>
-      </ul>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="text-xs text-muted">
-          Microphone
-          <select
-            value={audioId}
-            onChange={(e) => switchTo({ audioId: e.target.value })}
-            className={`${inputClass} mt-1 text-sm`}
-          >
-            {devices.mics.map((d) => (
-              <option key={d.deviceId} value={d.deviceId}>
-                {d.label || "Microphone"}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-xs text-muted">
-          Camera
-          <select
-            value={videoId}
-            onChange={(e) => switchTo({ videoId: e.target.value })}
-            className={`${inputClass} mt-1 text-sm`}
-          >
-            {devices.cameras.map((d) => (
-              <option key={d.deviceId} value={d.deviceId}>
-                {d.label || "Camera"}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <div className="flex items-center gap-3 text-sm">
-        <MicIcon className="h-4 w-4 text-muted" />
-        <div className="h-2 flex-1 overflow-hidden rounded-full bg-raised">
-          <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${Math.min(100, level * 250)}%` }} />
-        </div>
-        <span className="w-28 text-right text-xs text-muted">{heard ? "Mic works" : "Say something…"}</span>
-      </div>
-      {!heard && silentLong && (
-        <p className="rounded-lg border border-warning/25 bg-warning/[0.06] px-3 py-2 text-xs text-muted">
-          <span className="text-warning">No sound from this microphone.</span> Pick another one above. Virtual devices
-          (e.g. from game-audio or streaming apps) are often silent; choose your laptop or headset microphone.
-        </p>
-      )}
-      <FormError message={error} />
-      <Button variant="accent" disabled={!heard} onClick={onReady}>
-        Continue to calibration
-      </Button>
-    </Card>
-  );
-}
-
 function Room({
   v,
   stream,
@@ -218,7 +113,6 @@ function Room({
   const [examinerOnline, setExaminerOnline] = useState(false);
   const [question, setQuestion] = useState<string | null>(null);
   const [alreadyCalibrated, setAlreadyCalibrated] = useState(false);
-  const remoteVideo = useRef<HTMLVideoElement>(null);
   const selfVideo = useRef<HTMLVideoElement>(null);
   const onEndedRef = useRef(onEnded);
   useEffect(() => {
@@ -256,9 +150,6 @@ function Room({
   }, [v.id, user, stream]);
 
   useEffect(() => {
-    if (remoteVideo.current) remoteVideo.current.srcObject = remote;
-  }, [remote]);
-  useEffect(() => {
     if (selfVideo.current) selfVideo.current.srcObject = stream;
   }, [stream, calibrating]);
 
@@ -283,8 +174,7 @@ function Room({
         {status === "live" ? <Badge tone="success">Live</Badge> : <Badge tone="accent">Waiting room</Badge>}
         {conn.state !== "open" && <span className="text-sm text-warning">Reconnecting…</span>}
       </div>
-      <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black">
-        <video ref={remoteVideo} autoPlay playsInline className="h-full w-full object-contain" />
+      <RemoteVideo stream={remote}>
         {!remote && (
           <p className="absolute inset-0 grid place-items-center px-6 text-center text-sm text-muted">
             {examinerOnline
@@ -299,7 +189,7 @@ function Room({
           muted
           className="absolute right-3 bottom-3 w-40 -scale-x-100 rounded-lg border border-border-strong bg-black"
         />
-      </div>
+      </RemoteVideo>
       {status === "waiting" && remote && (
         <p className="text-sm text-muted">Your examiner can see you. The viva starts when they begin the interview.</p>
       )}
