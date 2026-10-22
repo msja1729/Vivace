@@ -1,5 +1,5 @@
 """The LLM behind the Grader and Co-Pilot, kept behind one small interface so it can be swapped
-(e.g. for a local model) without touching the agents."""
+without touching the agents. LLM_PROVIDER picks Claude (default) or Google Gemini."""
 
 import json
 import logging
@@ -71,6 +71,74 @@ class ClaudeLLM:
             raise LLMError("Claude returned malformed JSON.") from exc
 
 
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+
+class GeminiLLM:
+    """Google Gemini over its REST API (a free tier exists; key from aistudio.google.com)."""
+
+    def __init__(self):
+        import httpx
+
+        settings = get_settings()
+        if not settings.gemini_api_key:
+            raise LLMError("Gemini API key missing (set GEMINI_API_KEY in backend/.env).")
+        self._httpx = httpx
+        self._client = httpx.AsyncClient(timeout=90.0, headers={"x-goog-api-key": settings.gemini_api_key})
+        self._url = GEMINI_URL.format(model=settings.gemini_model)
+
+    async def json(self, system: str, prompt: str, schema: dict, max_tokens: int = 4000) -> dict:
+        body = {
+            "systemInstruction": {"parts": [{"text": system}]},
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "responseMimeType": "application/json",
+                "responseJsonSchema": schema,
+                # Newer models think before answering, and that counts as output: leave room.
+                "maxOutputTokens": max_tokens + 8000,
+            },
+        }
+        res = await self._post(body)
+        if res.status_code == 400 and "responseJsonSchema" in res.text:
+            # A model without schema support: ask for the shape in words instead.
+            del body["generationConfig"]["responseJsonSchema"]
+            body["contents"][0]["parts"][0]["text"] += (
+                "\n\nAnswer with JSON only, matching this JSON schema:\n" + json.dumps(schema)
+            )
+            res = await self._post(body)
+        if res.status_code in (401, 403) or (res.status_code == 400 and "API key" in res.text):
+            raise LLMError("Gemini API key missing or invalid (set GEMINI_API_KEY in backend/.env).")
+        if res.status_code == 404:
+            raise LLMError(
+                "Gemini model not found: check GEMINI_MODEL in backend/.env (see aistudio.google.com)."
+            )
+        if res.status_code == 429:
+            raise LLMError("Gemini free-tier limit reached; try again in a minute.")
+        if res.status_code >= 400:
+            raise LLMError(f"Gemini API error {res.status_code}.")
+
+        data = res.json()
+        candidate = (data.get("candidates") or [{}])[0]
+        reason = candidate.get("finishReason", "")
+        if data.get("promptFeedback", {}).get("blockReason") or reason in ("SAFETY", "PROHIBITED_CONTENT"):
+            raise LLMError("Gemini declined this request.")
+        if reason == "MAX_TOKENS":
+            raise LLMError("Gemini's answer was cut off.")
+        text = "".join(
+            p.get("text", "") for p in candidate.get("content", {}).get("parts", []) if not p.get("thought")
+        )
+        try:
+            return json.loads(text.strip().removeprefix("```json").removesuffix("```"))
+        except json.JSONDecodeError as exc:
+            raise LLMError("Gemini returned malformed JSON.") from exc
+
+    async def _post(self, body: dict):
+        try:
+            return await self._client.post(self._url, json=body)
+        except self._httpx.HTTPError as exc:
+            raise LLMError("Can't reach the Gemini API.") from exc
+
+
 _llm: LLM | None = None
 _error: str | None = None
 
@@ -80,7 +148,10 @@ def get_llm() -> LLM | None:
     global _llm, _error
     if _llm is None and _error is None:
         try:
-            _llm = ClaudeLLM()
+            _llm = GeminiLLM() if get_settings().llm_provider == "gemini" else ClaudeLLM()
+        except LLMError as exc:
+            _error = str(exc)
+            log.warning(_error)
         except Exception as exc:  # noqa: BLE001 — e.g. the `live` extra isn't installed
             _error = f"LLM unavailable: {exc}"
             log.warning(_error)

@@ -3242,6 +3242,7 @@ dependencies = [
 live = [
     { name = "anthropic" },
     { name = "faster-whisper" },
+    { name = "httpx" },
     { name = "mediapipe" },
     { name = "numpy" },
     { name = "opencv-python-headless" },
@@ -3267,6 +3268,7 @@ requires-dist = [
     { name = "email-validator", specifier = ">=2.3.0" },
     { name = "fastapi", specifier = ">=0.143.0" },
     { name = "faster-whisper", marker = "extra == 'live'", specifier = ">=1.2.1" },
+    { name = "httpx", marker = "extra == 'live'", specifier = ">=0.28" },
     { name = "mediapipe", marker = "extra == 'live'", specifier = ">=1.1.1" },
     { name = "numpy", marker = "extra == 'live'", specifier = ">=2.5.4" },
     { name = "opencv-python-headless", marker = "extra == 'live'", specifier = ">=5.0.0.93" },

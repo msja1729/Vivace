@@ -34,9 +34,13 @@ class Settings(BaseSettings):
     # ---------- Live viva: integrity + evaluation engines ----------
     # Detector thresholds and score weights live in this YAML file (defaults apply if it's missing).
     live_config_file: str = "./config.yaml"
-    # Claude for the Grader and the examiner's Co-Pilot. Needs ANTHROPIC_API_KEY; without it the
-    # session still runs (video, integrity, transcript), just without AI grading or suggestions.
+    # The AI for the Grader and the examiner's Co-Pilot: "claude" (ANTHROPIC_API_KEY) or "gemini"
+    # (GEMINI_API_KEY, free tier available). Without a key the session still runs (video, integrity,
+    # transcript), just without AI grading or suggestions.
+    llm_provider: Literal["claude", "gemini"] = "claude"
     anthropic_api_key: str = ""  # empty = the SDK's own lookup (env var or `ant auth login`)
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-flash-latest"  # or a fixed model ID from aistudio.google.com
     llm_model: str = "claude-sonnet-5-5"
     llm_effort: Literal["low", "medium", "high"] = "medium"
     whisper_model: str = "base.en"  # faster-whisper size: tiny.en, base.en, small.en, medium.en …
