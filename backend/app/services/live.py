@@ -12,7 +12,7 @@ from app.core.errors import BadRequest, Conflict, Forbidden, NotFound
 from app.live import session as live_session
 from app.live.evaluation import report as ai_report
 from app.live.evaluation.llm import LLMError
-from app.live.integrity.rules import LABELS
+from app.live.integrity.rules import LABELS, integrity_summary
 from app.live.session import hub
 from app.models import (
     ClassRoom,
@@ -30,6 +30,7 @@ from app.schemas.classroom import PersonOut
 from app.schemas.live import (
     CriterionResult,
     EventOut,
+    IntegritySummaryOut,
     QAOut,
     QueueOut,
     QueueRow,
@@ -203,6 +204,14 @@ def report(db: Session, session_id: str, user: User) -> SessionReportOut:
             for t in s.turns
         ],
         qa=[QAOut(**p) for p in ai_report.qa_pairs(s.turns)],
+        integrity=IntegritySummaryOut(
+            **integrity_summary(
+                [(e.type, e.start_ts, e.end_ts) for e in s.events],
+                s.risk_score,
+                s.proctor_frames,
+                s.face_frames,
+            )
+        ),
         ai_report=s.ai_report,
         sent_to_student=vivas._feedback_out(fb) if (fb := _feedback(db, s)) and fb.released_at else None,
     )

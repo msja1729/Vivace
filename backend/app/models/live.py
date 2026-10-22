@@ -42,6 +42,10 @@ class VivaSession(Base):
 
     # Engine scores (0–100), kept up to date while the session runs.
     risk_score: Mapped[float] = mapped_column(Float, default=0.0)
+    # Video frames the proctoring checked during the interview, and how many showed a face:
+    # the report only says "attended genuinely" if the proctoring actually saw the student.
+    proctor_frames: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    face_frames: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     mastery_score: Mapped[float | None] = mapped_column(Float, default=None)
 
     # The examiner's result. The AI's numbers are advice; this is the decision.

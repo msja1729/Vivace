@@ -56,6 +56,11 @@ class ReleaseIn(ApiModel):
     message: str = Field(default="", max_length=20000)
 
 
+class IntegritySummaryOut(ApiModel):
+    level: Literal["clear", "minor", "concerns", "unverified"]
+    text: str
+
+
 class QAOut(ApiModel):
     question: str
     answer: str
@@ -107,5 +112,6 @@ class SessionReportOut(ApiModel):
     events: list[EventOut]
     turns: list[TurnOut]
     qa: list[QAOut]  # each question with the student's answer, straight from the transcript
+    integrity: IntegritySummaryOut  # one or two lines: did the student genuinely attend?
     ai_report: dict | None  # the AI's written assessment (see live/evaluation/report.py)
     sent_to_student: VivaFeedbackOut | None  # what the student has been sent, if anything

@@ -396,6 +396,7 @@ export interface SessionReport {
   events: IntegrityEvent[];
   turns: Turn[];
   qa: { question: string; answer: string }[];
+  integrity: { level: "clear" | "minor" | "concerns" | "unverified"; text: string };
   aiReport: AiReport | null;
   sentToStudent: VivaFeedback | null;
 }

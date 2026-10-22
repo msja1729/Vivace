@@ -21,6 +21,58 @@ LABELS = {
     "lipsync_mismatch": "Speech while lips still",
 }
 
+# How each flag reads in the report's one-line integrity summary.
+SUMMARY_PHRASE = {
+    "gaze_off_screen": "looked away from the screen",
+    "head_turned": "turned their head away",
+    "reading_pattern": "seemed to read from something",
+    "no_face": "left the camera's view",
+    "multiple_faces": "had another face in view",
+    "prohibited_object": "had a phone, book or device in view",
+    "second_person": "had another person in view",
+    "secondary_speaker": "had another voice speaking",
+    "lipsync_mismatch": "had speech heard while their lips were still",
+}
+SERIOUS = {"second_person", "multiple_faces", "secondary_speaker", "prohibited_object", "lipsync_mismatch"}
+
+
+def integrity_summary(
+    events: list[tuple[str, float, float]], risk: float, proctor_frames: int, face_frames: int
+) -> dict:
+    """One or two plain sentences on whether the student genuinely attended, from the flags
+    (type, start, end) and how much video the proctoring saw. level: clear | minor | concerns | unverified."""
+    if proctor_frames < 25:  # under ~5 s of video: nothing to judge by
+        return {
+            "level": "unverified",
+            "text": "Integrity couldn't be checked: the proctoring received little or no video from the student.",
+        }
+    on_camera = face_frames / proctor_frames
+    if not events:
+        text = "Attended genuinely: the student stayed on camera, alone and facing the screen, with nothing suspicious."
+        if on_camera < 0.9:
+            text = "No integrity flags, but the student's face was only in view for part of the interview."
+        return {"level": "clear" if on_camera >= 0.9 else "minor", "text": text}
+
+    counts: dict[str, list[float]] = {}
+    for kind, start, end in events:
+        counts.setdefault(kind, []).append(max(0.0, end - start))
+    parts = []
+    for kind, spans in sorted(counts.items(), key=lambda kv: (kv[0] not in SERIOUS, -len(kv[1]))):
+        n = len(spans)
+        times = "once" if n == 1 else "twice" if n == 2 else f"{n} times"
+        parts.append(f"{SUMMARY_PHRASE.get(kind, kind.replace('_', ' '))} {times} ({round(sum(spans))} s)")
+    listed = "; ".join(parts)
+    if risk >= 30 or SERIOUS & counts.keys():
+        return {
+            "level": "concerns",
+            "text": f"Integrity concerns: the student {listed}. Review these before deciding.",
+        }
+    return {
+        "level": "minor",
+        "text": f"Attended genuinely, with minor moments: the student {listed}. Nothing points to cheating.",
+    }
+
+
 # Default gaze bounds before calibration (blendshape units, roughly -1..1).
 DEFAULT_BOUNDS = {"eye_x": [-0.45, 0.45], "eye_y": [-0.5, 0.45], "yaw": 0.0, "pitch": 0.0}
 

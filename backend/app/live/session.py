@@ -108,6 +108,8 @@ class LiveSession:
         self._stt_queue: asyncio.Queue = asyncio.Queue()
         self._tasks: list[asyncio.Task] = []
         self._frames_done: list[float] = []
+        self.proctor_frames = 0  # frames checked while the interview was live
+        self.face_frames = 0  # ... of which showed a face
         self._examiner_speaking_until = 0.0
         self._suggesting = False
         self._load()
@@ -134,6 +136,7 @@ class LiveSession:
                 )
             self.risk = s.risk_score
             self.mastery = s.mastery_score
+            self.proctor_frames, self.face_frames = s.proctor_frames, s.face_frames
             self.monitor.peak_risk = s.risk_score
             self._brief = {
                 "title": viva.title,
@@ -281,6 +284,7 @@ class LiveSession:
             s.status, s.ended_at = SessionStatus.ended, utcnow()
             s.risk_score = self.monitor.peak_risk
             s.mastery_score = self.mastery
+            s.proctor_frames, s.face_frames = self.proctor_frames, self.face_frames
             db.commit()
         self.status = SessionStatus.ended
         await self.send("student", {"type": "ended"})
@@ -358,6 +362,9 @@ class LiveSession:
             self.last_obs = obs
             now = time.time()
             self._frames_done = [x for x in self._frames_done if x > now - 2] + [now]
+            if self.status == SessionStatus.live and obs.face_ok:
+                self.proctor_frames += 1
+                self.face_frames += obs.faces > 0
             if self.status == SessionStatus.live or self.monitor.calibration is not None:
                 try:
                     await self._apply(self.monitor.on_frame(t, obs), jpeg)
@@ -642,6 +649,7 @@ class LiveSession:
                     with db_factory() as db:
                         s = self._row(db)
                         s.risk_score = self.monitor.peak_risk
+                        s.proctor_frames, s.face_frames = self.proctor_frames, self.face_frames
                         db.commit()
             await self.to_examiner(
                 {

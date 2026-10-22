@@ -158,3 +158,27 @@ def test_copilot_moves_on_when_a_project_has_enough_evidence():
 
     asyncio.run(agents.suggest(llm, state, None, covered=[], focus="Chatbot"))
     assert "move to this project now: Chatbot" in llm.prompts[1]
+
+
+def test_integrity_summary_in_plain_words():
+    from app.live.integrity.rules import integrity_summary
+
+    unseen = integrity_summary([], 0, proctor_frames=3, face_frames=3)
+    assert unseen["level"] == "unverified" and "couldn't be checked" in unseen["text"]
+
+    clean = integrity_summary([], 0, proctor_frames=3000, face_frames=2990)
+    assert clean["level"] == "clear" and clean["text"].startswith("Attended genuinely")
+
+    minor = integrity_summary([("gaze_off_screen", 10, 14), ("gaze_off_screen", 50, 54)], 8, 3000, 2990)
+    assert minor["level"] == "minor"
+    assert "looked away from the screen twice (8 s)" in minor["text"]
+
+    serious = integrity_summary([("second_person", 5, 9), ("gaze_off_screen", 10, 14)], 25, 3000, 2990)
+    assert serious["level"] == "concerns"
+    assert serious["text"].startswith("Integrity concerns: the student had another person in view once")
+
+
+def test_report_has_the_integrity_summary(client, setup):
+    sid = ended_session(client, setup)
+    report = client.get(f"/api/viva-sessions/{sid}", headers=setup["prof"]).json()
+    assert report["integrity"]["level"] == "unverified"  # no video in the test room

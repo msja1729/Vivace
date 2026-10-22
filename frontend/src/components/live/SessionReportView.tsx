@@ -1,46 +1,29 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import type { SessionReport } from "@/types";
-import { sendToStudent, snapshotUrl, writeAiReport } from "@/lib/api/vivas";
+import { sendToStudent, writeAiReport } from "@/lib/api/vivas";
 import { formatDateTime } from "@/lib/format";
 import { Button } from "@/components/ui/Button";
 import { Section } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Display";
 import { Checkbox, FormError, TextAreaField } from "@/components/ui/Field";
 import { ChevronLeftIcon, PrinterIcon, SparkleIcon } from "@/components/ui/Icons";
-import { Transcript, clock, riskBand } from "./LiveParts";
+import { Transcript } from "./LiveParts";
 import { AiReportView, MarksView, QAList } from "./ReportParts";
 import { ResultForm } from "./ResultForm";
 
 /**
  * One student's viva report, for anyone to read: marks, the AI's assessment, every question with the
- * student's answer, integrity, and the full transcript. Staff can edit the marks, (re)write the AI
+ * student's answer, a one-line integrity summary (no snapshots), and the full transcript. Staff can edit the marks, (re)write the AI
  * report and send results to the student. "Download PDF" prints just the report.
  */
 export function SessionReportView({ report: initial }: { report: SessionReport }) {
   const [r, setR] = useState(initial);
-  const [snaps, setSnaps] = useState<Record<number, string>>({});
   const [editingMarks, setEditingMarks] = useState(initial.score === null);
   const [aiBusy, setAiBusy] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
-
-  // Snapshots need the login token, so fetch them as blobs (all of them, so they print too).
-  useEffect(() => {
-    let urls: string[] = [];
-    let cancelled = false;
-    Promise.all(
-      r.events.filter((e) => e.hasSnapshot).map(async (e) => [e.id, await snapshotUrl(r.id, e.id).catch(() => "")] as const),
-    ).then((pairs) => {
-      urls = pairs.map(([, u]) => u).filter(Boolean);
-      if (!cancelled) setSnaps(Object.fromEntries(pairs.filter(([, u]) => u)));
-    });
-    return () => {
-      cancelled = true;
-      urls.forEach((u) => URL.revokeObjectURL(u));
-    };
-  }, [r.id, r.events]);
 
   async function writeReport() {
     setAiBusy(true);
@@ -54,7 +37,7 @@ export function SessionReportView({ report: initial }: { report: SessionReport }
     }
   }
 
-  const band = riskBand(r.riskScore);
+  const integrity = INTEGRITY[r.integrity.level];
   const minutes =
     r.startedAt && r.endedAt ? Math.round((new Date(r.endedAt).getTime() - new Date(r.startedAt).getTime()) / 60000) : null;
   const weights = new Map(r.evaluationCriteria.map((c) => [c.name, c.weight]));
@@ -166,36 +149,12 @@ export function SessionReportView({ report: initial }: { report: SessionReport }
         <QAList qa={r.qa} />
       </Section>
 
-      {/* 4. Integrity */}
-      <Section title="4. Integrity" description="What the proctoring flagged. Advisory: review the snapshots before deciding.">
-        <div className="flex flex-wrap items-center gap-3 text-sm">
-          <Badge tone={band.tone}>{band.label}</Badge>
-          <span className="text-muted">
-            Peak cheating risk {Math.round(r.riskScore)}% · {r.events.length} flag{r.events.length === 1 ? "" : "s"} ·{" "}
-            {r.calibrated ? "gaze calibrated" : "gaze not calibrated"}
-          </span>
+      {/* 4. Integrity: a short verdict, not the evidence */}
+      <Section title="4. Integrity" description="Did the student genuinely attend? From the AI proctoring.">
+        <div className="flex flex-wrap items-start gap-3">
+          <Badge tone={integrity.tone}>{integrity.label}</Badge>
+          <p className="min-w-0 flex-1 text-sm">{r.integrity.text}</p>
         </div>
-        {r.events.length === 0 ? (
-          <p className="mt-3 text-sm text-muted">Nothing was flagged.</p>
-        ) : (
-          <ul className="mt-4 grid gap-3 md:grid-cols-2">
-            {r.events.map((e) => (
-              <li key={e.id} className="flex gap-3 rounded-xl border border-border bg-tint p-3 break-inside-avoid">
-                {snaps[e.id] && (
-                  // eslint-disable-next-line @next/next/no-img-element -- object URL from an authenticated fetch
-                  <img src={snaps[e.id]} alt={`Snapshot: ${e.label}`} className="w-32 shrink-0 rounded-lg" />
-                )}
-                <div className="min-w-0 text-sm">
-                  <p className="font-medium">{e.label}</p>
-                  <p className="text-muted tabular-nums">
-                    at {clock(e.startTs)} for {Math.max(1, Math.round(e.endTs - e.startTs))} s
-                  </p>
-                  {e.detail && <p className="text-xs text-subtle">{e.detail}</p>}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
       </Section>
 
       {/* 5. Full transcript */}
@@ -214,6 +173,13 @@ export function SessionReportView({ report: initial }: { report: SessionReport }
     </div>
   );
 }
+
+const INTEGRITY: Record<SessionReport["integrity"]["level"], { label: string; tone: "success" | "warning" | "danger" | "neutral" }> = {
+  clear: { label: "Genuine", tone: "success" },
+  minor: { label: "Genuine", tone: "success" },
+  concerns: { label: "Concerns", tone: "danger" },
+  unverified: { label: "Not checked", tone: "neutral" },
+};
 
 /** Send the student their marks, the AI's report and a message. They see it on their viva page. */
 function SendPanel({ report: r, onSent }: { report: SessionReport; onSent: (r: SessionReport) => void }) {
