@@ -37,6 +37,7 @@ from app.schemas.live import (
     ReleaseIn,
     ResultIn,
     SessionReportOut,
+    TopicGradeOut,
     TurnOut,
 )
 from app.schemas.viva import Criterion
@@ -204,6 +205,19 @@ def report(db: Session, session_id: str, user: User) -> SessionReportOut:
             for t in s.turns
         ],
         qa=[QAOut(**p) for p in ai_report.qa_pairs(s.turns)],
+        topics=[
+            TopicGradeOut(
+                name=g["name"],
+                kind=g.get("kind", "project"),
+                level=g.get("level", "not_demonstrated"),
+                score=g.get("score", 0),
+                summary=g.get("summary", ""),
+                evidence=g.get("evidence", ""),
+                limited=bool(g.get("limited")),
+                answers=int(g.get("answers", 0)),
+            )
+            for g in ai_report.topic_grades(s.copilot)
+        ],
         integrity=IntegritySummaryOut(
             **integrity_summary(
                 [(e.type, e.start_ts, e.end_ts) for e in s.events],
@@ -228,9 +242,9 @@ async def write_ai_report(db: Session, session_id: str, user: User) -> SessionRe
     s, _ = _session(db, session_id, user)
     if s.status != SessionStatus.ended:
         raise Conflict("End the interview before writing the report.")
-    llm = live_session.get_llm()
+    llm, why_not = live_session.resolve_llm(db, s)
     if llm is None:
-        raise BadRequest(live_session.llm_error() or "The AI isn't available.")
+        raise BadRequest(why_not or "The AI isn't available.")
     try:
         await ai_report.generate(s.id, live_session.db_factory, llm)
     except (LLMError, ValueError) as exc:

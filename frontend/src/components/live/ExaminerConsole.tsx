@@ -4,12 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type {
   ClassRoom,
-  CopilotPlan,
+  CopilotState,
   EngineStatus,
   IntegrityEvent,
   Person,
   SessionState,
-  Suggestion,
   Turn,
   Viva,
   VisionStatus,
@@ -20,22 +19,22 @@ import { useAuth } from "@/lib/auth/AuthProvider";
 import { Button } from "@/components/ui/Button";
 import { Section } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Display";
-import { FormError, inputClass } from "@/components/ui/Field";
-import { ChevronLeftIcon, MicIcon, PlayIcon, SparkleIcon, StopIcon } from "@/components/ui/Icons";
+import { FormError } from "@/components/ui/Field";
+import { ChevronLeftIcon, MicIcon, PlayIcon, StopIcon } from "@/components/ui/Icons";
+import { CopilotPanel } from "./CopilotPanel";
 import { EventList, ScoreMeter, Transcript, clock } from "./LiveParts";
 import { DeviceCheck, MicMeter, NvidiaTip, RemoteVideo } from "./Media";
 import { StudentWorkPanel } from "./StudentWorkPanel";
 
-const KIND_LABEL: Record<Suggestion["kind"], string> = {
-  opening: "Opening",
-  follow_up: "Follow-up",
-  deeper: "Same project",
-  devils_advocate: "Probe",
-  cross_project: "Across projects",
-  new_project: "Next project",
+const NO_COPILOT: CopilotState = {
+  topics: [],
+  current: null,
+  suggestions: [],
+  mode: null,
+  busy: null,
+  error: null,
+  notice: null,
 };
-
-const NO_PLAN: CopilotPlan = { projects: [], current: "", covered: [], enough: false, note: "", next: "" };
 
 interface RoomState {
   status: SessionState;
@@ -47,13 +46,11 @@ interface RoomState {
   studentSpeaking: boolean;
   events: IntegrityEvent[];
   turns: Turn[];
-  suggestions: Suggestion[];
-  suggestionsError: string | null;
-  suggestionsLoading: boolean;
+  copilot: CopilotState;
+  away: string[]; // the student has left the viva right now (another tab or app, or out of full screen)
   engines: Record<string, EngineStatus>;
   llm: string;
   calibration: string | null;
-  plan: CopilotPlan;
   vision: VisionStatus | null;
   aiReport: "writing" | "ready" | { error: string } | null;
 }
@@ -68,13 +65,11 @@ const EMPTY: RoomState = {
   studentSpeaking: false,
   events: [],
   turns: [],
-  suggestions: [],
-  suggestionsError: null,
-  suggestionsLoading: false,
+  copilot: NO_COPILOT,
+  away: [],
   engines: {},
   llm: "",
   calibration: null,
-  plan: NO_PLAN,
   vision: null,
   aiReport: null,
 };
@@ -91,7 +86,6 @@ export function ExaminerConsole({ cls, viva, student }: { cls: ClassRoom; viva: 
   const [conn, setConn] = useState<{ state: "connecting" | "open" | "closed"; reason?: string }>({ state: "connecting" });
   const [s, setS] = useState<RoomState>(EMPTY);
   const [micOn, setMicOn] = useState(true);
-  const [question, setQuestion] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const room = useRef<LiveRoom | null>(null);
   const selfView = useRef<HTMLVideoElement>(null);
@@ -110,11 +104,9 @@ export function ExaminerConsole({ cls, viva, student }: { cls: ClassRoom; viva: 
           mastery: (m.mastery as number | null) ?? null,
           events: (m.events as IntegrityEvent[]) ?? p.events,
           turns: (m.turns as Turn[]) ?? p.turns,
-          suggestions: (m.suggestions as Suggestion[]) ?? p.suggestions,
-          suggestionsError: (m.suggestionsError as string | null) ?? null,
+          copilot: (m.copilot as CopilotState) ?? p.copilot,
           engines: (m.engines as Record<string, EngineStatus>) ?? p.engines,
           llm: (m.llm as string) ?? p.llm,
-          plan: (m.plan as CopilotPlan) ?? p.plan,
           aiReport: m.status === "ended" && p.status === "live" ? "writing" : p.aiReport,
         }));
         break;
@@ -131,6 +123,7 @@ export function ExaminerConsole({ cls, viva, student }: { cls: ClassRoom; viva: 
           studentSpeaking: Boolean(m.studentSpeaking),
           status: m.status as SessionState,
           vision: (m.vision as VisionStatus | null) ?? null,
+          away: (m.away as string[]) ?? [],
         }));
         break;
       case "event": {
@@ -148,14 +141,8 @@ export function ExaminerConsole({ cls, viva, student }: { cls: ClassRoom; viva: 
           turns: p.turns.map((t) => (t.id === m.turnId ? { ...t, analysis: m.analysis as Turn["analysis"] } : t)),
         }));
         break;
-      case "suggestions":
-        setS((p) => ({
-          ...p,
-          suggestions: (m.items as Suggestion[]) ?? p.suggestions,
-          suggestionsError: (m.error as string | null) ?? null,
-          suggestionsLoading: Boolean(m.loading),
-          plan: (m.plan as CopilotPlan) ?? p.plan,
-        }));
+      case "copilot":
+        setS((p) => ({ ...p, copilot: m as unknown as CopilotState }));
         break;
       case "ai_report":
         setS((p) => ({ ...p, aiReport: m.error ? { error: m.error as string } : "ready" }));
@@ -210,7 +197,6 @@ export function ExaminerConsole({ cls, viva, student }: { cls: ClassRoom; viva: 
   const ask = (text: string) => {
     if (!text.trim()) return;
     send({ type: "show_question", text: text.trim() });
-    setQuestion("");
   };
 
   const examinerName = user?.name ?? "Examiner";
@@ -320,6 +306,11 @@ export function ExaminerConsole({ cls, viva, student }: { cls: ClassRoom; viva: 
                 Risk {Math.round(s.risk)}% · {s.events.length} flag{s.events.length === 1 ? "" : "s"}
               </span>
             )}
+            {s.status === "live" && s.away.length > 0 && (
+              <span className="absolute top-3 right-3 rounded-full bg-danger/90 px-3 py-1 text-xs font-medium text-white backdrop-blur">
+                {s.away.includes("tab_switch") ? "Student left the viva (another tab or app)" : "Student left full screen"}
+              </span>
+            )}
             {!remote && (
               <p className="absolute inset-0 grid place-items-center text-sm text-muted">
                 {s.studentOnline ? "Connecting video…" : "The student's video appears here."}
@@ -381,57 +372,7 @@ export function ExaminerConsole({ cls, viva, student }: { cls: ClassRoom; viva: 
 
         {/* Stays in view while you scroll the student's work and the transcript. */}
         <div className="space-y-5 xl:sticky xl:top-5 xl:max-h-[calc(100vh-2.5rem)] xl:self-start xl:overflow-y-auto xl:pr-1">
-          <Section
-            title="Co-Pilot"
-            description="Follow-ups on what you just asked, one project at a time."
-            actions={
-              <Button size="sm" variant="ghost" disabled={s.suggestionsLoading} onClick={() => send({ type: "suggest" })}>
-                <SparkleIcon className="h-3.5 w-3.5" /> {s.suggestionsLoading ? "Thinking…" : "Refresh"}
-              </Button>
-            }
-          >
-            {s.suggestionsError && <p className="mb-3 text-xs text-warning">{s.suggestionsError}</p>}
-            <ProjectPlan plan={s.plan} onFocus={(project) => send({ type: "focus", project })} />
-            {s.suggestions.length === 0 ? (
-              <p className="text-sm text-muted">{s.suggestionsLoading ? "Reading the student's work…" : "No suggestions yet."}</p>
-            ) : (
-              <ul className="space-y-3">
-                {s.suggestions.map((q, i) => (
-                  <li key={i} className="rounded-lg border border-border bg-tint p-3">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <Badge tone={q.kind === "devils_advocate" ? "warning" : "accent"}>{KIND_LABEL[q.kind] ?? q.kind}</Badge>
-                      {q.criterion && <span className="text-xs text-subtle">{q.criterion}</span>}
-                    </div>
-                    <p className="mt-2 text-sm">{q.question}</p>
-                    <p className="mt-1 text-xs text-muted">{q.why}</p>
-                    <Button size="sm" variant="outline" className="mt-2" disabled={s.status !== "live"} onClick={() => ask(q.question)}>
-                      Show to student
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <form
-              className="mt-4 flex gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                ask(question);
-              }}
-            >
-              <input
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                placeholder="Type your own question"
-                aria-label="Your own question"
-                className={inputClass}
-                disabled={s.status !== "live"}
-              />
-              <Button type="submit" size="sm" variant="outline" disabled={s.status !== "live" || !question.trim()}>
-                Show
-              </Button>
-            </form>
-            <p className="mt-2 text-xs text-subtle">Ask out loud as usual; &quot;Show&quot; also puts the question on the student&apos;s screen.</p>
-          </Section>
+          <CopilotPanel c={s.copilot} live={s.status === "live"} send={send} ask={ask} />
 
           <Section title="Integrity flags" description="Advisory. Click a flag to see its snapshot.">
             <div className="max-h-96 overflow-y-auto pr-1">
@@ -466,57 +407,5 @@ function ProctorStatus({ vision: v, live }: { vision: VisionStatus | null; live:
       {(v.persons ?? 0) > 1 && ` · ${v.persons} people`}
       {v.objects.length > 0 && ` · ${v.objects.join(", ")} in view`}
     </span>
-  );
-}
-
-/** The projects found in the student's work: which one the questions are on, which are covered, and
- * the AI's call to move on once it has enough evidence. Click a project to move the questions there. */
-function ProjectPlan({ plan, onFocus }: { plan: CopilotPlan; onFocus: (project: string) => void }) {
-  if (!plan.projects.length && !plan.current) return null;
-  const projects = plan.projects.length ? plan.projects : [plan.current];
-  return (
-    <div className="mb-4 space-y-3">
-      <div className="flex flex-wrap gap-1.5">
-        {projects.map((p) => {
-          const covered = plan.covered.includes(p);
-          const current = p === plan.current;
-          return (
-            <button
-              key={p}
-              type="button"
-              onClick={() => onFocus(p)}
-              title={current ? "The questions are on this project" : `Move the questions to ${p}`}
-              className={`rounded-full border px-2.5 py-1 text-xs transition ${
-                current
-                  ? "border-accent bg-accent-soft font-medium text-accent"
-                  : covered
-                    ? "border-success/40 text-success"
-                    : "border-border-strong text-muted hover:bg-raised hover:text-text"
-              }`}
-            >
-              {covered && "✓ "}
-              {p}
-            </button>
-          );
-        })}
-      </div>
-      {plan.enough ? (
-        <div className="rounded-xl border border-success/30 bg-success/10 p-3 text-sm">
-          <p className="font-medium text-success">Enough on {plan.current || "this project"}.</p>
-          {plan.note && <p className="mt-0.5 text-xs text-muted">{plan.note}</p>}
-          {plan.next && (
-            <p className="mt-1.5 text-xs">
-              We can move to <span className="font-medium">{plan.next}</span>: the questions below are on it.
-            </p>
-          )}
-        </div>
-      ) : (
-        plan.note && (
-          <p className="text-xs text-muted">
-            <span className="text-text">{plan.current}:</span> {plan.note}
-          </p>
-        )
-      )}
-    </div>
   );
 }

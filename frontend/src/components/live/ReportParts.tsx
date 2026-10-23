@@ -1,6 +1,6 @@
 // Report pieces shared by the examiner's report and the student's view of what was sent to them.
 
-import type { AiReport, ReleasedMarks, Understanding } from "@/types";
+import type { AiReport, ReleasedMarks, TopicGrade, Understanding } from "@/types";
 import { Badge } from "@/components/ui/Display";
 
 const VERDICT: Record<AiReport["verdict"], { label: string; tone: "success" | "accent" | "warning" | "danger" | "neutral" }> = {
@@ -147,5 +147,36 @@ export function QAList({ qa }: { qa: { question: string; answer: string }[] }) {
         </li>
       ))}
     </ol>
+  );
+}
+
+/** The Co-Pilot's topic grades: level and score, a plain summary and a quote as evidence. */
+export function TopicGrades({ topics }: { topics: TopicGrade[] }) {
+  if (!topics.length) return <p className="text-sm text-muted">No topics were graded in this viva.</p>;
+  return (
+    <ul className="divide-y divide-border rounded-xl border border-border">
+      {topics.map((t) => {
+        const level = LEVEL[t.level] ?? LEVEL.not_demonstrated;
+        return (
+          <li key={t.name} className="space-y-1.5 p-4 break-inside-avoid">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-medium">
+                {t.name} <span className="text-xs font-normal text-subtle capitalize">· {t.kind}</span>
+              </p>
+              <span className="flex items-center gap-2">
+                <Badge tone={level.tone}>{level.label}</Badge>
+                <span className="text-sm font-semibold tabular-nums">{t.score}/10</span>
+              </span>
+            </div>
+            {t.summary && <p className="text-sm text-muted">{t.summary}</p>}
+            {t.evidence && <p className="border-l-2 border-accent/40 pl-3 text-sm italic">“{t.evidence}”</p>}
+            <p className="text-xs text-subtle">
+              {t.answers} answer{t.answers === 1 ? "" : "s"}
+              {t.limited && " · limited evidence: graded when the examiner moved on early"}
+            </p>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

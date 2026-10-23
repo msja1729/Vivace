@@ -170,8 +170,8 @@ async def live_room(ws: WebSocket, viva_id: str, student_id: str, token: str = "
     setattr(room, role, ws)
     await room.send(role, room.snapshot_state(role))
     await room.send(other, {"type": "presence", role: True})
-    if role == "examiner" and not room.suggestions:
-        asyncio.create_task(room.refresh_suggestions())
+    if role == "examiner":
+        asyncio.create_task(room.ensure_topics())
 
     try:
         while True:

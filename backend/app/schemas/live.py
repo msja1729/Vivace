@@ -61,6 +61,19 @@ class IntegritySummaryOut(ApiModel):
     text: str
 
 
+class TopicGradeOut(ApiModel):
+    """One topic of the student's work, as graded by the Co-Pilot during the viva."""
+
+    name: str
+    kind: str
+    level: str  # strong | partial | weak | not_demonstrated
+    score: float  # 0-10
+    summary: str
+    evidence: str
+    limited: bool  # graded before the AI was confident (the examiner moved on early)
+    answers: int
+
+
 class QAOut(ApiModel):
     question: str
     answer: str
@@ -112,6 +125,7 @@ class SessionReportOut(ApiModel):
     events: list[EventOut]
     turns: list[TurnOut]
     qa: list[QAOut]  # each question with the student's answer, straight from the transcript
+    topics: list[TopicGradeOut]  # the Co-Pilot's topic grades
     integrity: IntegritySummaryOut  # one or two lines: did the student genuinely attend?
     ai_report: dict | None  # the AI's written assessment (see live/evaluation/report.py)
     sent_to_student: VivaFeedbackOut | None  # what the student has been sent, if anything

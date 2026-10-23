@@ -54,6 +54,9 @@ class VivaSession(Base):
     notes: Mapped[str] = mapped_column(Text, default="")
     # The AI's written assessment, made when the interview ends (see evaluation/report.py).
     ai_report: Mapped[dict | None] = mapped_column(JSON, default=None)
+    # The Co-Pilot's topics from the student's work, the questions and answers on each, its readiness
+    # checks and the topic grades (see live/evaluation/topics.py).
+    copilot: Mapped[dict | None] = mapped_column(JSON, default=None)
 
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 

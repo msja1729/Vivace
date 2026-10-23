@@ -51,6 +51,8 @@ class LiveConfig(BaseModel):
         "second_person": 25,
         "secondary_speaker": 20,
         "lipsync_mismatch": 12,
+        "tab_switch": 15,
+        "left_fullscreen": 8,
     }
     risk_window_seconds: float = 600
     mastery_weights: MasteryWeights = MasteryWeights()

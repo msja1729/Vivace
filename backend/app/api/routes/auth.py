@@ -5,8 +5,19 @@ from app.core import microsoft
 from app.core.config import get_settings
 from app.core.errors import NotFound
 from app.core.security import create_access_token
-from app.schemas.user import AuthOut, DevLoginIn, LoginIn, MicrosoftLoginIn, RegisterIn, SetRoleIn, UserOut
-from app.services import users
+from app.schemas.user import (
+    AiCheckOut,
+    AiSettingsIn,
+    AiSettingsOut,
+    AuthOut,
+    DevLoginIn,
+    LoginIn,
+    MicrosoftLoginIn,
+    RegisterIn,
+    SetRoleIn,
+    UserOut,
+)
+from app.services import ai_settings, users
 
 router = APIRouter(tags=["auth"])
 
@@ -63,3 +74,25 @@ def me(user: CurrentUser):
 @router.put("/users/me/role", response_model=UserOut)
 def set_my_role(body: SetRoleIn, user: CurrentUser, db: DbSession):
     return users.set_role(db, user, body.role)
+
+
+@router.get("/users/me/ai", response_model=AiSettingsOut)
+def my_ai(user: CurrentUser):
+    """Instructors: the AI their vivas use (provider, model, last 4 characters of the key)."""
+    return ai_settings.get(user)
+
+
+@router.put("/users/me/ai", response_model=AiSettingsOut)
+def save_my_ai(body: AiSettingsIn, user: CurrentUser, db: DbSession):
+    return ai_settings.save(db, user, body)
+
+
+@router.delete("/users/me/ai", response_model=AiSettingsOut)
+def remove_my_ai(user: CurrentUser, db: DbSession):
+    return ai_settings.remove(db, user)
+
+
+@router.post("/users/me/ai/check", response_model=AiCheckOut)
+async def check_my_ai(user: CurrentUser):
+    """One tiny request with the saved key."""
+    return await ai_settings.check(user)

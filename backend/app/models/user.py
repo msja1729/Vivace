@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Enum, String
+from sqlalchemy import Enum, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, UTCDateTime, utcnow
@@ -24,4 +24,9 @@ class User(Base):
     )  # chosen at registration
     # scrypt hash for email + password accounts; None for Microsoft-only accounts
     password_hash: Mapped[str | None] = mapped_column(String(255), default=None)
+    # Instructors' own AI for their vivas: provider ("gemini" | "claude"), model, and the API key,
+    # encrypted (see services/ai_settings.py). None = use the server's shared key.
+    ai_provider: Mapped[str | None] = mapped_column(String(20), default=None)
+    ai_model: Mapped[str | None] = mapped_column(String(80), default=None)
+    ai_key_enc: Mapped[str | None] = mapped_column(Text, default=None)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)

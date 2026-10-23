@@ -104,7 +104,15 @@ def qa_pairs(turns) -> list[dict]:
     return pairs
 
 
-def _prompt(viva: Viva, work: str, pairs: list[dict]) -> str:
+def topic_grades(copilot: dict | None) -> list[dict]:
+    """The Co-Pilot's topic grades, in topic order: [{name, kind, level, score, summary, evidence, ...}]."""
+    if not copilot:
+        return []
+    grades = copilot.get("grades") or {}
+    return [t | grades[t["id"]] for t in copilot.get("topics", []) if t["id"] in grades]
+
+
+def _prompt(viva: Viva, work: str, pairs: list[dict], graded: list[dict]) -> str:
     crit = "\n".join(
         f"- {c['name']} (weight {c['weight']}): {c.get('description', '')}" for c in viva.evaluation_criteria
     )
@@ -118,7 +126,17 @@ def _prompt(viva: Viva, work: str, pairs: list[dict]) -> str:
         f"Evaluation criteria (score each 0-10, or -1 if not tested):\n{crit or '(none)'}\n\n"
         f"Instructor's report format:\n{viva.report_format or '(none: use your own clear structure)'}\n\n"
         f"The student's submitted work (resume, projects, notes):\n{work[:12000]}\n\n"
-        f"The interview, question by question:\n{qa or '(nothing was said)'}\n\nWrite the report."
+        f"The interview, question by question:\n{qa or '(nothing was said)'}\n\n"
+        f"Grades given topic by topic during the viva (stay consistent with them):\n"
+        f"{_graded_text(graded) or '(none)'}\n\nWrite the report."
+    )
+
+
+def _graded_text(graded: list[dict]) -> str:
+    return "\n".join(
+        f"- {g['name']}: {g['level'].replace('_', ' ')}, {g['score']}/10"
+        f"{' (limited evidence)' if g.get('limited') else ''}. {g['summary']}"
+        for g in graded
     )
 
 
@@ -130,14 +148,14 @@ async def generate(session_id: str, db_factory: Callable[[], Session], llm: LLM)
             s = db.get(VivaSession, session_id)
             viva = db.get(Viva, s.viva_id)
             work = ctx.build(db, viva, s.student_id).brief
-            return viva, work, qa_pairs(s.turns)
+            return viva, work, qa_pairs(s.turns), topic_grades(s.copilot)
 
-    viva, work, pairs = await asyncio.get_running_loop().run_in_executor(None, load)
+    viva, work, pairs, graded = await asyncio.get_running_loop().run_in_executor(None, load)
     if not any(p["answer"] for p in pairs):
         raise LLMError(
             "The student didn't answer anything that was transcribed, so there is nothing to assess."
         )
-    data = await llm.json(REPORT_SYSTEM, _prompt(viva, work, pairs), REPORT_SCHEMA, max_tokens=6000)
+    data = await llm.json(REPORT_SYSTEM, _prompt(viva, work, pairs, graded), REPORT_SCHEMA, max_tokens=6000)
     report = _clean(data, [c["name"] for c in viva.evaluation_criteria])
     with db_factory() as db:
         s = db.get(VivaSession, session_id)

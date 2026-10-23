@@ -33,6 +33,8 @@ risk_weights:
   second_person: 25
   secondary_speaker: 20
   lipsync_mismatch: 12
+  tab_switch: 15            # left the viva for another tab or app (reported by the browser)
+  left_fullscreen: 8        # left full screen
 risk_window_seconds: 600
 
 # Conceptual Mastery Score per answer, averaged over answers.

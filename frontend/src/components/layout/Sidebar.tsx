@@ -18,6 +18,7 @@ import {
   LogoutIcon,
   MicIcon,
   PlusIcon,
+  SettingsIcon,
   UsersIcon,
 } from "@/components/ui/Icons";
 
@@ -62,6 +63,7 @@ export function Sidebar({ user, onNavigate }: { user: User; onNavigate?: () => v
     { href: "/dashboard", label: "Home", icon: <HomeIcon /> },
     ...(isInstructor ? [{ href: "/classes/create", label: "Create class", icon: <PlusIcon /> }] : []),
     { href: "/classes/join", label: "Join class", icon: <DoorIcon /> },
+    ...(isInstructor ? [{ href: "/settings", label: "Settings", icon: <SettingsIcon /> }] : []),
   ];
 
   const yourClasses = [...(myClasses?.teaching ?? []), ...(myClasses?.assisting ?? []), ...(myClasses?.joined ?? [])];

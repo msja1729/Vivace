@@ -3,12 +3,9 @@ Co-Pilot's project-by-project plan."""
 
 # ruff: noqa: F811 — the fixtures below are imported from test_live and used as test arguments
 
-import asyncio
 from types import SimpleNamespace
 
 from app.live import session as live_session
-from app.live.evaluation import agents
-from app.live.evaluation.context import Context
 from app.live.evaluation.report import qa_pairs
 from app.models import Speaker, VivaTurn
 from tests.test_live import no_models, setup, until, ws_url  # noqa: F401
@@ -118,46 +115,6 @@ def test_deleting_a_finished_viva(client, setup):
     ended_session(client, setup)
     assert client.delete(f"/api/vivas/{setup['viva_id']}", headers=setup["prof"]).status_code == 204
     assert client.get(f"/api/vivas/{setup['viva_id']}", headers=setup["prof"]).status_code == 404
-
-
-class PlanLLM:
-    def __init__(self, reply):
-        self.reply, self.prompts = reply, []
-
-    async def json(self, system, prompt, schema, max_tokens=4000):
-        self.prompts.append(prompt)
-        return self.reply
-
-
-def test_copilot_moves_on_when_a_project_has_enough_evidence():
-    state = agents.ExamState(
-        title="t", instructions="", criteria=[], context=Context("Projects: Cache, Chatbot", [])
-    )
-    state.transcript = [("examiner", "How does your cache evict?"), ("student", "LRU with a linked list.")]
-    llm = PlanLLM(
-        {
-            "projects": ["Cache", "Chatbot"],
-            "current_project": "Cache",
-            "enough_evidence": True,
-            "coverage_note": "Design, eviction and trade-offs covered.",
-            "next_project": "Chatbot",
-            "suggestions": [
-                {
-                    "question": "What model does the chatbot use?",
-                    "kind": "new_project",
-                    "why": "x",
-                    "criterion": "y",
-                }
-            ],
-        }
-    )
-    plan = asyncio.run(agents.suggest(llm, state, None, covered=["Old project"], focus=""))
-    assert plan.enough_evidence and plan.next_project == "Chatbot"
-    assert plan.suggestions[0].kind == "new_project"
-    assert "Old project" in llm.prompts[0]  # covered projects are passed on
-
-    asyncio.run(agents.suggest(llm, state, None, covered=[], focus="Chatbot"))
-    assert "move to this project now: Chatbot" in llm.prompts[1]
 
 
 def test_integrity_summary_in_plain_words():

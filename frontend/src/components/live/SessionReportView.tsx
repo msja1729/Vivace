@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/Display";
 import { Checkbox, FormError, TextAreaField } from "@/components/ui/Field";
 import { ChevronLeftIcon, PrinterIcon, SparkleIcon } from "@/components/ui/Icons";
 import { Transcript } from "./LiveParts";
-import { AiReportView, MarksView, QAList } from "./ReportParts";
+import { AiReportView, MarksView, QAList, TopicGrades } from "./ReportParts";
 import { ResultForm } from "./ResultForm";
 
 /**
@@ -115,9 +115,14 @@ export function SessionReportView({ report: initial }: { report: SessionReport }
         )}
       </Section>
 
-      {/* 2. The AI's assessment */}
+      {/* 2. Topic grades from the viva */}
+      <Section title="2. Topics assessed" description="Graded topic by topic during the viva, from the questions on each.">
+        <TopicGrades topics={r.topics} />
+      </Section>
+
+      {/* 3. The AI's assessment */}
       <Section
-        title="2. Assessment by the AI"
+        title="3. Assessment by the AI"
         description="Written from the whole interview. Advisory: the examiner decides the marks."
         actions={
           r.aiReport && (
@@ -145,12 +150,12 @@ export function SessionReportView({ report: initial }: { report: SessionReport }
       </Section>
 
       {/* 3. Questions and answers */}
-      <Section title="3. Questions and answers" description="Each question asked, and the student's answer word for word.">
+      <Section title="4. Questions and answers" description="Each question asked, and the student's answer word for word.">
         <QAList qa={r.qa} />
       </Section>
 
       {/* 4. Integrity: a short verdict, not the evidence */}
-      <Section title="4. Integrity" description="Did the student genuinely attend? From the AI proctoring.">
+      <Section title="5. Integrity" description="Did the student genuinely attend? From the AI proctoring.">
         <div className="flex flex-wrap items-start gap-3">
           <Badge tone={integrity.tone}>{integrity.label}</Badge>
           <p className="min-w-0 flex-1 text-sm">{r.integrity.text}</p>
@@ -158,7 +163,7 @@ export function SessionReportView({ report: initial }: { report: SessionReport }
       </Section>
 
       {/* 5. Full transcript */}
-      <Section title="5. Full transcript">
+      <Section title="6. Full transcript">
         <details className="group">
           <summary className="cursor-pointer text-sm text-accent print:hidden">Show the whole conversation, with times</summary>
           <div className="mt-4">

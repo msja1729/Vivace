@@ -64,7 +64,7 @@ def test_gemini_falls_back_when_the_model_has_no_schema_support(monkeypatch):
         (httpx.Response(429, text="quota"), "free-tier limit"),
         (httpx.Response(503, text="high demand"), "busy"),
         (httpx.Response(403, text="denied"), "key missing or invalid"),
-        (httpx.Response(404, text="no such model"), "GEMINI_MODEL"),
+        (httpx.Response(404, text="no such model"), "model not found"),
         (reply("", "SAFETY"), "declined"),
         (reply('{"score": ', "MAX_TOKENS"), "cut off"),
         (reply("not json"), "malformed"),
@@ -82,7 +82,7 @@ def test_provider_setting_picks_gemini(monkeypatch):
     monkeypatch.setattr(llm_mod, "_llm", None)
     monkeypatch.setattr(llm_mod, "_error", None)
     assert llm_mod.get_llm() is None
-    assert "GEMINI_API_KEY" in llm_mod.llm_error()
+    assert "Gemini API key missing" in llm_mod.llm_error()
 
 
 def test_gemini_retries_a_busy_model_once(monkeypatch):

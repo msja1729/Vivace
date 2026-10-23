@@ -1,5 +1,6 @@
 """The LLM behind the Grader and Co-Pilot, kept behind one small interface so it can be swapped
-without touching the agents. LLM_PROVIDER picks Claude (default) or Google Gemini."""
+without touching the agents. Claude or Google Gemini: each instructor's own key (see
+services/ai_settings.py) or, as a fallback, the server's shared key from backend/.env."""
 
 import asyncio
 import json
@@ -21,18 +22,24 @@ class LLM(Protocol):
         ...
 
 
+SERVER_KEY = "set it in backend/.env"
+ACCOUNT_KEY = "check it in Settings"
+
+CLAUDE_MODELS = ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"]
+GEMINI_MODELS = ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-3.7-flash"]
+
+
 class ClaudeLLM:
-    def __init__(self):
+    def __init__(self, api_key: str | None = None, model: str | None = None, where: str = SERVER_KEY):
         import anthropic
 
         settings = get_settings()
+        key = api_key or settings.anthropic_api_key
         self._anthropic = anthropic
-        self._client = anthropic.AsyncAnthropic(
-            **({"api_key": settings.anthropic_api_key} if settings.anthropic_api_key else {}),
-            timeout=60.0,
-        )
-        self._model = settings.llm_model
+        self._client = anthropic.AsyncAnthropic(**({"api_key": key} if key else {}), timeout=60.0)
+        self._model = model or settings.llm_model
         self._effort = settings.llm_effort
+        self._where = where
 
     async def json(self, system: str, prompt: str, schema: dict, max_tokens: int = 4000) -> dict:
         a = self._anthropic
@@ -49,17 +56,17 @@ class ClaudeLLM:
                 messages=[{"role": "user", "content": prompt}],
             )
         except a.AuthenticationError as exc:
-            raise LLMError(
-                "Claude API key missing or invalid (set ANTHROPIC_API_KEY in backend/.env)."
-            ) from exc
+            raise LLMError(f"Claude API key missing or invalid ({self._where}).") from exc
         except a.RateLimitError as exc:
             raise LLMError("Claude API rate limit reached; try again shortly.") from exc
+        except a.NotFoundError as exc:
+            raise LLMError(f"Claude model {self._model} not found ({self._where}).") from exc
         except a.APIStatusError as exc:
             raise LLMError(f"Claude API error {exc.status_code}.") from exc
         except a.APIConnectionError as exc:
             raise LLMError("Can't reach the Claude API.") from exc
         except TypeError as exc:  # no credentials found at all
-            raise LLMError("Claude API key missing (set ANTHROPIC_API_KEY in backend/.env).") from exc
+            raise LLMError(f"Claude API key missing ({self._where}).") from exc
 
         if response.stop_reason == "refusal":
             raise LLMError("Claude declined this request.")
@@ -85,18 +92,26 @@ class GeminiLLM:
     """Google Gemini over its REST API (a free tier exists; key from aistudio.google.com).
     Tries GEMINI_MODEL, then each of GEMINI_FALLBACK_MODELS; a busy model gets one retry first."""
 
-    def __init__(self, retry_delay: float = 1.5):
+    def __init__(
+        self,
+        retry_delay: float = 1.5,
+        api_key: str | None = None,
+        model: str | None = None,
+        where: str = SERVER_KEY,
+    ):
         import httpx
 
         settings = get_settings()
-        if not settings.gemini_api_key:
-            raise LLMError("Gemini API key missing (set GEMINI_API_KEY in backend/.env).")
+        key = api_key or settings.gemini_api_key
+        self._where = where
+        if not key:
+            raise LLMError(f"Gemini API key missing ({where}).")
         self._httpx = httpx
         # A model that hasn't answered in 25 s is stuck (it happens): better to try the next one.
         self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(25.0, connect=10.0), headers={"x-goog-api-key": settings.gemini_api_key}
+            timeout=httpx.Timeout(25.0, connect=10.0), headers={"x-goog-api-key": key}
         )
-        models = [settings.gemini_model, *settings.gemini_fallback_models]
+        models = [model or settings.gemini_model, *settings.gemini_fallback_models]
         self._models = list(dict.fromkeys(m for m in models if m))  # in order, no repeats
         self._retry_delay = retry_delay
 
@@ -122,15 +137,13 @@ class GeminiLLM:
                 log.warning("Gemini %s answered %s; trying the next model", model, res.status_code)
                 continue  # busy, stuck, unknown or out of free quota: try the next one
             if res.status_code in (401, 403) or (res.status_code == 400 and "API key" in res.text):
-                raise LLMError("Gemini API key missing or invalid (set GEMINI_API_KEY in backend/.env).")
+                raise LLMError(f"Gemini API key missing or invalid ({self._where}).")
             if res.status_code >= 400:
                 raise LLMError(f"Gemini API error {res.status_code}.")
             return self._parse(res.json())
 
         if all(code == 404 for code in statuses):
-            raise LLMError(
-                "Gemini model not found: check GEMINI_MODEL in backend/.env (see aistudio.google.com)."
-            )
+            raise LLMError(f"Gemini model not found ({self._where}).")
         if all(code == NO_ANSWER for code in statuses):
             raise LLMError("Can't reach the Gemini API: check the server's internet connection.")
         if 429 in statuses and not any(code in BUSY for code in statuses):
@@ -176,6 +189,22 @@ class GeminiLLM:
 
 _llm: LLM | None = None
 _error: str | None = None
+_clients: dict[tuple[str, str, str], LLM] = {}
+
+
+def make_llm(provider: str, api_key: str, model: str | None = None) -> LLM:
+    """An instructor's own LLM, from their provider, key and model (reused while they don't change)."""
+    cache_key = (provider, api_key, model or "")
+    llm = _clients.get(cache_key)
+    if llm is None:
+        if provider == "gemini":
+            llm = GeminiLLM(api_key=api_key, model=model, where=ACCOUNT_KEY)
+        elif provider == "claude":
+            llm = ClaudeLLM(api_key=api_key, model=model, where=ACCOUNT_KEY)
+        else:
+            raise LLMError(f"Unknown AI provider: {provider}.")
+        _clients[cache_key] = llm
+    return llm
 
 
 def get_llm() -> LLM | None:

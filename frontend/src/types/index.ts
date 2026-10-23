@@ -396,6 +396,7 @@ export interface SessionReport {
   events: IntegrityEvent[];
   turns: Turn[];
   qa: { question: string; answer: string }[];
+  topics: TopicGrade[];
   integrity: { level: "clear" | "minor" | "concerns" | "unverified"; text: string };
   aiReport: AiReport | null;
   sentToStudent: VivaFeedback | null;
@@ -403,19 +404,67 @@ export interface SessionReport {
 
 export interface Suggestion {
   question: string;
-  kind: "opening" | "follow_up" | "deeper" | "devils_advocate" | "cross_project" | "new_project";
+  kind: "opening" | "follow_up" | "different";
   why: string;
   criterion: string;
 }
 
-/** The Co-Pilot's view of the interview, project by project. */
-export interface CopilotPlan {
-  projects: string[];
-  current: string;
-  covered: string[];
-  enough: boolean; // enough evidence on `current`: time to move to `next`
-  note: string;
-  next: string;
+/** The Co-Pilot's judgement of one topic (a running check, or the final grade). */
+export interface TopicAssessment {
+  ready: boolean;
+  confidence: "high" | "medium" | "low";
+  level: Understanding;
+  score: number;
+  summary: string;
+  evidence: string;
+  missing: string;
+  answers: number;
+  limited?: boolean; // final grade given before the AI was confident
+}
+
+/** One thing in the student's work that can be tested (a project, experience, skill, claim). */
+export interface CopilotTopic {
+  id: string;
+  name: string;
+  kind: "project" | "experience" | "skill" | "claim" | "course";
+  summary: string;
+  status: "new" | "started" | "current" | "ready" | "graded";
+  asked: number;
+  ready: boolean;
+  assessment: TopicAssessment | null;
+  grade: TopicAssessment | null;
+}
+
+/** The Co-Pilot, topic by topic. */
+export interface CopilotState {
+  topics: CopilotTopic[];
+  current: string | null;
+  suggestions: Suggestion[];
+  mode: Suggestion["kind"] | null;
+  busy: "topics" | "questions" | null;
+  error: string | null;
+  notice: string | null; // "Ready to grade …"
+}
+
+/** A topic grade in the report. */
+export interface TopicGrade {
+  name: string;
+  kind: string;
+  level: Understanding;
+  score: number;
+  summary: string;
+  evidence: string;
+  limited: boolean;
+  answers: number;
+}
+
+/** An instructor's own AI for their vivas. The key itself is never sent back, only its last 4 characters. */
+export interface AiSettings {
+  provider: "gemini" | "claude" | null;
+  model: string | null;
+  keyHint: string | null;
+  serverDefault: boolean;
+  models: Record<string, string[]>;
 }
 
 /** What the proctoring sees right now (null = no recent frames from the student). */

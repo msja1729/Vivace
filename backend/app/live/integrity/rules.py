@@ -19,7 +19,11 @@ LABELS = {
     "second_person": "Another person in view",
     "secondary_speaker": "Another voice speaking",
     "lipsync_mismatch": "Speech while lips still",
+    "tab_switch": "Left the viva (another tab or app)",
+    "left_fullscreen": "Left full screen",
 }
+
+AWAY_KINDS = ("tab_switch", "left_fullscreen")  # reported by the student's browser, not the camera
 
 # How each flag reads in the report's one-line integrity summary.
 SUMMARY_PHRASE = {
@@ -32,8 +36,17 @@ SUMMARY_PHRASE = {
     "second_person": "had another person in view",
     "secondary_speaker": "had another voice speaking",
     "lipsync_mismatch": "had speech heard while their lips were still",
+    "tab_switch": "left the viva for another tab or app",
+    "left_fullscreen": "left full screen",
 }
-SERIOUS = {"second_person", "multiple_faces", "secondary_speaker", "prohibited_object", "lipsync_mismatch"}
+SERIOUS = {
+    "second_person",
+    "multiple_faces",
+    "secondary_speaker",
+    "prohibited_object",
+    "lipsync_mismatch",
+    "tab_switch",
+}
 
 
 def integrity_summary(
@@ -171,6 +184,7 @@ class IntegrityMonitor:
         self._eyes: deque[tuple[float, float]] = deque()  # (t, eye_x)
         self._reading_paused_until = 0.0
         self._low_voice: Flag | None = None  # a voice check that didn't match, waiting for a second one
+        self._away: dict[str, Flag] = {}  # open "left the viva" flags, by kind
         self._mouth: deque[tuple[float, float]] = deque()  # (t, mouth_open)
         self._voice: deque[tuple[float, bool]] = deque()  # (t, student speaking)
 
@@ -251,6 +265,27 @@ class IntegrityMonitor:
                 self.flags.append(c.flag)
         return changes
 
+    def on_away(self, t: float, kind: str, away: bool) -> list[Change]:
+        """The student's browser reports leaving the viva (another tab or app, or out of full screen)
+        and coming back. Each time away is one flag, from leaving until returning."""
+        if kind not in AWAY_KINDS:
+            return []
+        flag = self._away.get(kind)
+        if away and flag is None:
+            flag = Flag(kind, t, t)
+            self._away[kind] = flag
+            self.flags.append(flag)
+            return [Change("open", flag)]
+        if not away and flag is not None:
+            del self._away[kind]
+            flag.end, flag.closed = max(flag.end, t), True
+            return [Change("close", flag)]
+        return []
+
+    @property
+    def away_now(self) -> list[str]:
+        return list(self._away)
+
     def on_speaker_check(self, start: float, end: float, similarity: float) -> Change | None:
         """A finished student speech segment compared with the enrolled voice print.
 
@@ -285,7 +320,10 @@ class IntegrityMonitor:
             self._lipsync,
             self._person,
         ]
-        return [c for cond in conds + list(self._objects.values()) for c in cond.update(t, False)]
+        changes = [c for cond in conds + list(self._objects.values()) for c in cond.update(t, False)]
+        for kind in list(self._away):
+            changes += self.on_away(t, kind, False)
+        return changes
 
     # ---------- detectors over time ----------
 

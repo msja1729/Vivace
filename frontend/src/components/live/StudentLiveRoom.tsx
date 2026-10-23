@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/Display";
 import { Checkbox, FormError } from "@/components/ui/Field";
 import { MicIcon, VideoIcon } from "@/components/ui/Icons";
 import { DeviceCheck, NvidiaTip, RemoteVideo } from "./Media";
+import { ExamLock } from "./ExamLock";
 
 type Step = "consent" | "devices" | "calibrate" | "room" | "ended";
 const CORNERS = ["top-left", "top-right", "bottom-right", "bottom-left"] as const;
@@ -173,6 +174,7 @@ function Room({
 
   return (
     <div className="space-y-4">
+      <ExamLock live={status === "live"} report={(kind, away) => send({ type: "away", kind, away })} />
       <div className="flex flex-wrap items-center gap-2">
         {status === "live" ? <Badge tone="success">Live</Badge> : <Badge tone="accent">Waiting room</Badge>}
         {conn.state !== "open" && <span className="text-sm text-warning">Reconnecting…</span>}
@@ -194,7 +196,10 @@ function Room({
         />
       </RemoteVideo>
       {status === "waiting" && remote && (
-        <p className="text-sm text-muted">Your examiner can see you. The viva starts when they begin the interview.</p>
+        <p className="text-sm text-muted">
+          Your examiner can see you. When they start the interview, the viva goes full screen: stay on it until they
+          end the interview (leaving it, or switching to another tab or app, is reported to your examiner).
+        </p>
       )}
       {question && (
         <div className="rounded-xl border border-accent/40 bg-accent-soft p-4">

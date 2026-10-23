@@ -196,9 +196,7 @@ def test_answers_are_graded_and_mastery_tracked(client, setup):
                 break
         return room
 
-    room = asyncio.run(scenario())
-    assert room.last_grade is not None and room.last_grade.memorization_flag
-    assert room.suggestions and room.suggestions[0]["question"] == "Why a hash map?"
+    asyncio.run(scenario())
     with live_session.db_factory() as db:
         answer = db.query(VivaTurn).filter_by(session_id=sid, speaker="student").one()
         a = answer.analysis
@@ -357,3 +355,25 @@ def test_delivery_metrics():
     assert 0 <= d.fluency <= 1
     assert metrics.mastery(None, None, 0.9, LiveConfig().mastery_weights) is None
     assert metrics.mastery(1.0, 1.0, 1.0, LiveConfig().mastery_weights) == 100
+
+
+def test_leaving_the_viva_is_flagged_from_leaving_to_returning():
+    m = IntegrityMonitor(LiveConfig())
+    opened = m.on_away(10.0, "tab_switch", True)
+    assert [c.kind for c in opened] == ["open"] and m.away_now == ["tab_switch"]
+    assert m.on_away(11.0, "tab_switch", True) == []  # still away: no second flag
+    closed = m.on_away(16.0, "tab_switch", False)
+    assert closed[0].kind == "close" and closed[0].flag.end - closed[0].flag.start == 6.0
+    assert m.on_away(20.0, "something_else", True) == []
+    assert m.risk(16.0) == pytest.approx(15 * (1 + 6 / 10))
+
+    m.on_away(30.0, "left_fullscreen", True)
+    assert [c.flag.type for c in m.close_all(35.0)] == ["left_fullscreen"]  # the interview ended
+
+
+def test_leaving_the_viva_reads_plainly_in_the_report():
+    from app.live.integrity.rules import integrity_summary
+
+    s = integrity_summary([("tab_switch", 10, 16)], 24, 3000, 2990)
+    assert s["level"] == "concerns"
+    assert "left the viva for another tab or app once (6 s)" in s["text"]

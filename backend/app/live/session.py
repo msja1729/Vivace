@@ -28,11 +28,12 @@ from app.live.engines import status as engine_status
 from app.live.evaluation import agents, metrics
 from app.live.evaluation import context as ctx
 from app.live.evaluation import report as ai_report
-from app.live.evaluation.llm import LLMError, get_llm, llm_error
+from app.live.evaluation import topics as topics_ai
+from app.live.evaluation.llm import LLM, LLMError, get_llm
 from app.live.integrity import audio, deepgram
 from app.live.integrity.rules import LABELS, Change, Flag, IntegrityMonitor
 from app.live.integrity.vision import FrameObs, analyze
-from app.models import SessionStatus, Speaker, Viva, VivaEvent, VivaSession, VivaTurn
+from app.models import ClassRoom, SessionStatus, Speaker, User, Viva, VivaEvent, VivaSession, VivaTurn
 
 log = logging.getLogger("live.session")
 
@@ -85,20 +86,21 @@ class LiveSession:
         self._enroll_pcm: list[bytes] = []
         self._voice_step = False
         self.state: agents.ExamState | None = None
-        self.suggestions: list[dict] = []
-        self.suggestions_error: str | None = None
-        # The Co-Pilot's view of the interview, project by project (see agents.Plan).
-        self.plan: dict = {
-            "projects": [],
-            "current": "",
-            "covered": [],
-            "enough": False,
-            "note": "",
-            "next": "",
+        # The Co-Pilot (see evaluation/topics.py). Saved in the session row; suggestions are not.
+        self.copilot: dict = {
+            "topics": [],
+            "current": None,
+            "log": {},
+            "assess": {},
+            "grades": {},
+            "notified": [],
         }
-        self.focus = ""  # a project the examiner chose to move to
+        self.suggestions: list[dict] = []
+        self.suggest_mode: str | None = None
+        self.copilot_busy: str | None = None  # "topics" | "questions" while the AI works
+        self.copilot_error: str | None = None
+        self.copilot_notice: str | None = None
         self._answer_last_end: float | None = None  # when the student's latest answer turn ended
-        self.last_grade: agents.Grade | None = None
         self.answer = _Answer()
         self.risk = 0.0
         self.mastery: float | None = None
@@ -136,6 +138,8 @@ class LiveSession:
                 )
             self.risk = s.risk_score
             self.mastery = s.mastery_score
+            if s.copilot:
+                self.copilot = {**self.copilot, **s.copilot}
             self.proctor_frames, self.face_frames = s.proctor_frames, s.face_frames
             self.monitor.peak_risk = s.risk_score
             # Names Deepgram should spell right (project terms are added once the work is read).
@@ -182,8 +186,8 @@ class LiveSession:
             context = ctx.Context("(Couldn't read the student's submission.)", [])
         self.state = agents.ExamState(context=context, **self._brief)
         self.keyterms = deepgram.keyterms_for(self._names, context.brief)
-        if self.examiner is not None and not self.suggestions:
-            asyncio.create_task(self.refresh_suggestions())
+        if self.examiner is not None:
+            asyncio.create_task(self.ensure_topics())
 
     # ---------- messaging ----------
 
@@ -218,12 +222,10 @@ class LiveSession:
                 "risk": self.risk,
                 "mastery": self.mastery,
                 "engines": engine_status(),
-                "llm": llm_error() or ("ready" if get_llm() else "unavailable"),
+                "llm": self._ai()[1] or "ready",
                 "events": [_event_out(e) for e in s.events],
                 "turns": [_turn_out(t) for t in s.turns],
-                "suggestions": self.suggestions,
-                "suggestionsError": self.suggestions_error,
-                "plan": self.plan,
+                "copilot": self.copilot_view(),
             }
 
     async def on_text(self, who: str, msg: dict) -> None:
@@ -235,6 +237,12 @@ class LiveSession:
             )
         elif who == "student" and kind == "calibration":
             await self._calibration(msg.get("step"))
+        elif who == "student" and kind == "away":
+            # Full-screen lock: the student's browser reports leaving / returning to the viva.
+            if self.status == SessionStatus.live:
+                await self._apply(
+                    self.monitor.on_away(self.t(), str(msg.get("kind", "")), bool(msg.get("away")))
+                )
         elif who == "examiner":
             if kind == "start":
                 await self.start_interview()
@@ -242,12 +250,13 @@ class LiveSession:
                 await self.end_interview()
             elif kind == "show_question":
                 await self._show_question(str(msg.get("text", ""))[:1000])
+            elif kind == "topic":
+                asyncio.create_task(self.select_topic(str(msg.get("id", ""))))
             elif kind == "suggest":
-                asyncio.create_task(self.refresh_suggestions())
-            elif kind == "focus":
-                # The examiner moves on to another project: suggestions follow it.
-                self.focus = str(msg.get("project", ""))[:200]
-                asyncio.create_task(self.refresh_suggestions())
+                mode = msg.get("mode") if msg.get("mode") in topics_ai.MODES else "different"
+                asyncio.create_task(self.suggest(mode))
+            elif kind == "topics_refresh":
+                asyncio.create_task(self.ensure_topics(force=True))
             elif kind == "grade_now":
                 asyncio.create_task(self._grade(self._take_answer()))
 
@@ -296,8 +305,11 @@ class LiveSession:
         asyncio.create_task(self._write_report())
 
     async def _write_report(self) -> None:
-        """The AI's written report, ready for the examiner shortly after the interview ends."""
-        llm = get_llm()
+        """The last topic's grade, then the AI's written report, shortly after the interview ends."""
+        current = self.copilot["current"]
+        if current and self.copilot["log"].get(current) and current not in self.copilot["grades"]:
+            await self.grade_topic(current)
+        llm, _ = self._ai()
         if llm is None:
             return
         try:
@@ -540,11 +552,12 @@ class LiveSession:
             "fluency": d.fluency,
         }
         grade = None
-        llm = get_llm()
+        llm, ai_error = self._ai()
+        self._log_answer(a.question, text)
         if len(text.split()) < 4:
             analysis["note"] = "Too short to grade."
         elif llm is None or self.state is None:
-            analysis["note"] = llm_error() or "AI grading is still loading."
+            analysis["note"] = ai_error or "AI grading is still loading."
         else:
             try:
                 grade = await agents.grade(llm, self.state, a.question, text)
@@ -566,7 +579,6 @@ class LiveSession:
                 "criteria": [c.model_dump() for c in grade.criteria],
             }
             analysis["mastery"] = metrics.mastery(grade.correctness, sim, d.fluency, self.cfg.mastery_weights)
-            self.last_grade = grade
             if self.state is not None:
                 self.state.weak_points += grade.weak_points
 
@@ -585,49 +597,182 @@ class LiveSession:
         await self.to_examiner(
             {"type": "grade", "turnId": a.turn_ids[0], "analysis": analysis, "mastery": self.mastery}
         )
-        if grade is not None:
-            await self.refresh_suggestions()
+        current = self.copilot["current"]
+        if current and current not in self.copilot["grades"]:
+            asyncio.create_task(self._check_topic(current))
 
-    async def refresh_suggestions(self) -> None:
-        llm = get_llm()
-        if self._suggesting:
+    # ---------- the Co-Pilot, topic by topic ----------
+
+    def _ai(self) -> tuple[LLM | None, str | None]:
+        """The AI for this viva: the examiner's own key, else the class instructor's, else the server's."""
+        with db_factory() as db:
+            return resolve_llm(db, self._row(db))
+
+    def copilot_view(self) -> dict:
+        c = self.copilot
+        topics = []
+        for t in c["topics"]:
+            tid = t["id"]
+            status = (
+                "graded"
+                if tid in c["grades"]
+                else "current"
+                if tid == c["current"]
+                else "ready"
+                if tid in c["notified"]
+                else "started"
+                if c["log"].get(tid)
+                else "new"
+            )
+            topics.append(
+                t
+                | {
+                    "status": status,
+                    "asked": len(c["log"].get(tid, [])),
+                    "assessment": c["assess"].get(tid),
+                    "grade": c["grades"].get(tid),
+                    "ready": tid in c["notified"],
+                }
+            )
+        return {
+            "topics": topics,
+            "current": c["current"],
+            "suggestions": self.suggestions,
+            "mode": self.suggest_mode,
+            "busy": self.copilot_busy,
+            "error": self.copilot_error,
+            "notice": self.copilot_notice,
+        }
+
+    async def _push_copilot(self) -> None:
+        await self.to_examiner({"type": "copilot", **self.copilot_view()})
+
+    def _save_copilot(self) -> None:
+        with db_factory() as db:
+            self._row(db).copilot = dict(self.copilot)
+            db.commit()
+
+    async def ensure_topics(self, force: bool = False) -> None:
+        """The topics in the student's work (once, unless `force`)."""
+        if (self.copilot["topics"] and not force) or self.copilot_busy or self.state is None:
+            return
+        llm, error = self._ai()
+        if llm is None:
+            self.copilot_error = error
+            await self._push_copilot()
+            return
+        self.copilot_busy, self.copilot_error = "topics", None
+        await self._push_copilot()
+        try:
+            found = await topics_ai.find_topics(llm, self.state)
+            if found:
+                self.copilot["topics"] = found
+                self._save_copilot()
+            else:
+                self.copilot_error = "No topics found in the student's work: ask your own questions."
+        except (LLMError, ValueError) as exc:
+            self.copilot_error = str(exc)
+        finally:
+            self.copilot_busy = None
+        await self._push_copilot()
+
+    def _topic(self, tid: str | None) -> dict | None:
+        return next((t for t in self.copilot["topics"] if t["id"] == tid), None)
+
+    async def select_topic(self, tid: str) -> None:
+        """The examiner moves to a topic: the previous one is graded, then questions on the new one."""
+        if self._topic(tid) is None:
+            return
+        previous = self.copilot["current"]
+        self.copilot["current"] = tid
+        self.copilot_notice = None
+        self._save_copilot()
+        if (
+            previous
+            and previous != tid
+            and self.copilot["log"].get(previous)
+            and previous not in self.copilot["grades"]
+        ):
+            asyncio.create_task(self.grade_topic(previous))
+        await self.suggest("different" if self.copilot["log"].get(tid) else "opening")
+
+    async def suggest(self, mode: str) -> None:
+        """Questions on the current topic: opening ones, follow-ups on the last answer, or a different part."""
+        topic = self._topic(self.copilot["current"])
+        if topic is None or self.copilot_busy == "questions":
+            return
+        llm, error = self._ai()
+        if llm is None or self.state is None:
+            self.copilot_error = error or "Reading the student's work…"
+            await self._push_copilot()
+            return
+        self.copilot_busy, self.copilot_error, self.suggest_mode = "questions", None, mode
+        await self._push_copilot()
+        try:
+            log = self.copilot["log"].get(topic["id"], [])
+            self.suggestions = await topics_ai.questions(llm, self.state, topic, log, mode)
+        except (LLMError, ValueError) as exc:
+            self.copilot_error = str(exc)
+        finally:
+            self.copilot_busy = None
+        await self._push_copilot()
+
+    def _log_answer(self, question: str, answer: str) -> None:
+        """Keep the question and answer under the current topic (a continued answer is joined)."""
+        tid = self.copilot["current"]
+        if not tid or not answer.strip():
+            return
+        log = self.copilot["log"].setdefault(tid, [])
+        if log and log[-1]["q"] == question:
+            log[-1]["a"] = f"{log[-1]['a']} {answer}".strip()
+        else:
+            log.append({"q": question, "a": answer})
+        self._save_copilot()
+
+    async def _check_topic(self, tid: str) -> None:
+        """After each answer: is there enough to grade the topic yet? Tell the examiner once there is."""
+        topic, log = self._topic(tid), self.copilot["log"].get(tid, [])
+        llm, _ = self._ai()
+        if topic is None or not log or llm is None or self.state is None:
+            return
+        try:
+            result = await topics_ai.assess(llm, self.state, topic, log, final=False)
+        except (LLMError, ValueError) as exc:
+            log_msg = str(exc)
+            self.copilot_error = log_msg
+            await self._push_copilot()
+            return
+        if tid in self.copilot["grades"]:
+            return  # graded meanwhile (the examiner moved on)
+        self.copilot["assess"][tid] = result
+        if result["ready"] and tid not in self.copilot["notified"]:
+            self.copilot["notified"].append(tid)
+            self.copilot_notice = (
+                f"Ready to grade {topic['name']}: {result['level'].replace('_', ' ')} understanding "
+                f"({result['score']}/10). You can move on, or keep asking."
+            )
+        self._save_copilot()
+        await self._push_copilot()
+
+    async def grade_topic(self, tid: str) -> None:
+        """The topic's final grade, on everything asked about it (marked "limited" if it wasn't ready)."""
+        topic, log = self._topic(tid), self.copilot["log"].get(tid, [])
+        llm, error = self._ai()
+        if topic is None or not log:
             return
         if llm is None or self.state is None:
-            self.suggestions_error = llm_error() or "Reading the student's work…"
-            await self.to_examiner(
-                {"type": "suggestions", "items": self.suggestions, "error": self.suggestions_error}
-            )
+            self.copilot_error = error
+            await self._push_copilot()
             return
-        self._suggesting = True
-        await self.to_examiner({"type": "suggestions", "items": self.suggestions, "loading": True})
         try:
-            covered = self.plan["covered"]
-            plan = await agents.suggest(llm, self.state, self.last_grade, covered, self.focus)
-            if plan.enough_evidence and plan.current_project and plan.current_project not in covered:
-                covered = [*covered, plan.current_project]
-            self.plan = {
-                "projects": plan.projects or self.plan["projects"],
-                "current": self.focus or plan.current_project,
-                "covered": covered,
-                "enough": plan.enough_evidence,
-                "note": plan.coverage_note,
-                "next": plan.next_project,
-            }
-            self.focus = ""
-            self.suggestions = [s.model_dump() for s in plan.suggestions]
-            self.suggestions_error = None
+            result = await topics_ai.assess(llm, self.state, topic, log, final=True)
         except (LLMError, ValueError) as exc:
-            self.suggestions_error = str(exc)
-        finally:
-            self._suggesting = False
-        await self.to_examiner(
-            {
-                "type": "suggestions",
-                "items": self.suggestions,
-                "error": self.suggestions_error,
-                "plan": self.plan,
-            }
-        )
+            self.copilot_error = f"Couldn't grade {topic['name']}: {exc}"
+            await self._push_copilot()
+            return
+        self.copilot["grades"][tid] = result | {"limited": tid not in self.copilot["notified"]}
+        self._save_copilot()
+        await self._push_copilot()
 
     # ---------- aggregator ----------
 
@@ -666,6 +811,7 @@ class LiveSession:
                     "examinerSpeaking": self.segmenters[Speaker.examiner].speaking,
                     "status": self.status.value,
                     "vision": self._vision_status(),
+                    "away": self.monitor.away_now,
                 }
             )
 
@@ -683,6 +829,26 @@ class LiveSession:
                 gaze = "up" if o.eye_y > by[1] else "screen"
         objects = sorted({x["label"] for x in o.objects if x["label"] != "person"})
         return {"faces": o.faces, "persons": o.persons, "gaze": gaze, "objects": objects}
+
+
+def resolve_llm(db: Session, s: VivaSession) -> tuple[LLM | None, str | None]:
+    """The AI for a session: the examiner's own key, else the class instructor's, else the server's
+    shared key. Returns (llm, None) or (None, why not)."""
+    from app.services import ai_settings
+
+    viva = db.get(Viva, s.viva_id)
+    owner = db.get(ClassRoom, viva.class_id).instructor_id if viva else None
+    for uid in dict.fromkeys(u for u in (s.examiner_id, owner) if u):
+        try:
+            llm = ai_settings.llm_for(db.get(User, uid))
+        except LLMError as exc:
+            return None, str(exc)
+        if llm is not None:
+            return llm, None
+    llm = get_llm()
+    if llm is None:
+        return None, "No AI key: add yours in Settings (AI for vivas)."
+    return llm, None
 
 
 def _event_out(e: VivaEvent) -> dict:
