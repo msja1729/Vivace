@@ -23,7 +23,7 @@ import { Badge } from "@/components/ui/Display";
 import { FormError, inputClass } from "@/components/ui/Field";
 import { ChevronLeftIcon, MicIcon, PlayIcon, SparkleIcon, StopIcon } from "@/components/ui/Icons";
 import { EventList, ScoreMeter, Transcript, clock } from "./LiveParts";
-import { DeviceCheck, MicMeter, RemoteVideo } from "./Media";
+import { DeviceCheck, MicMeter, NvidiaTip, RemoteVideo } from "./Media";
 import { StudentWorkPanel } from "./StudentWorkPanel";
 
 const KIND_LABEL: Record<Suggestion["kind"], string> = {
@@ -231,7 +231,12 @@ export function ExaminerConsole({ cls, viva, student }: { cls: ClassRoom; viva: 
             onStream={setLocal}
             onReady={() => setDevicesChecked(true)}
             readyLabel="Join the live room"
-            tips={<p className="text-sm text-muted">Make sure the student will hear you: speak and watch the bar move.</p>}
+            tips={
+              <div className="space-y-3">
+                <p className="text-sm text-muted">Make sure the student will hear you: speak and watch the bar move.</p>
+                <NvidiaTip />
+              </div>
+            }
           />
         ) : (
           !mediaError && <p className="text-sm text-muted">Opening your camera and microphone…</p>

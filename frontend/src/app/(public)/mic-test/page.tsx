@@ -1,13 +1,25 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { DENOISERS, denoiseStream, type Denoiser } from "@/lib/live/denoise";
 import { listDevices, micConstraints, recordMic, stopStream, wavBlob } from "@/lib/live/media";
-import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Checkbox, FormError, inputClass } from "@/components/ui/Field";
 import { MicIcon } from "@/components/ui/Icons";
 
 const SECONDS = 8;
+
+/** viva: the browser's own clean-up (what the viva uses now) · raw: everything off · rnnoise / gtcrn:
+ * AI noise removal in the browser (with the browser's echo cancellation and volume, without its
+ * noise suppression, so the two don't stack). */
+type Mode = "viva" | "raw" | Denoiser;
+
+const MODE_LABEL: Record<Mode, string> = {
+  viva: "As in the viva (browser clean-up)",
+  raw: "Raw (processing off)",
+  rnnoise: `AI noise removal: ${DENOISERS.rnnoise.label}`,
+  gtcrn: `AI noise removal: ${DENOISERS.gtcrn.label}`,
+};
 
 interface Take {
   id: number;
@@ -15,6 +27,14 @@ interface Take {
   url: string;
   settings: string;
   peak: number;
+}
+
+/** Calls `onTick` with the seconds left, several times a second, until stopped. */
+function countdown(seconds: number, onTick: (left: number) => void): () => void {
+  const start = Date.now();
+  onTick(seconds);
+  const timer = setInterval(() => onTick(Math.max(0, seconds - Math.floor((Date.now() - start) / 1000))), 200);
+  return () => clearInterval(timer);
 }
 
 /**
@@ -47,32 +67,36 @@ export default function MicTestPage() {
 
   useEffect(() => () => takes.forEach((t) => URL.revokeObjectURL(t.url)), [takes]);
 
-  async function record(processing: boolean) {
+  async function record(mode: Mode) {
     setError(null);
-    setBusy(processing ? "viva" : "raw");
+    setBusy(mode);
     let stream: MediaStream | null = null;
+    let ai: { stream: MediaStream; stop: () => void } | null = null;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: micConstraints(mic || undefined, processing) });
+      const ml = mode === "rnnoise" || mode === "gtcrn";
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: micConstraints(mic || undefined, mode !== "raw", mode === "viva"),
+      });
       const s = stream.getAudioTracks()[0].getSettings();
       const settings = [
         `echo cancellation ${s.echoCancellation ? "on" : "off"}`,
-        `noise suppression ${s.noiseSuppression ? "on" : "off"}`,
+        ml ? `AI noise removal (${DENOISERS[mode].label})` : `noise suppression ${s.noiseSuppression ? "on" : "off"}`,
         `auto volume ${s.autoGainControl ? "on" : "off"}`,
       ].join(" · ");
+      if (ml) ai = await denoiseStream(stream, mode);
       if (echo && voice.current) {
         voice.current.currentTime = 0;
         void voice.current.play();
       }
-      const start = Date.now();
-      const timer = setInterval(() => setLeft(Math.max(0, SECONDS - Math.floor((Date.now() - start) / 1000))), 200);
+      const stopCountdown = countdown(SECONDS, setLeft);
       let peak = 0;
-      const { samples, rate } = await recordMic(stream, SECONDS, (p) => {
+      const { samples, rate } = await recordMic(ai?.stream ?? stream, SECONDS, (p) => {
         peak = Math.max(peak, p);
         setLevel(p);
       });
-      clearInterval(timer);
+      stopCountdown();
       voice.current?.pause();
-      const label = `${processing ? "As in the viva" : "Raw (processing off)"}${echo ? " · with voice playing" : ""}`;
+      const label = `${MODE_LABEL[mode]}${echo ? " · with voice playing" : ""}`;
       setTakes((t) => [
         { id: ++ids.current, label, url: URL.createObjectURL(wavBlob(samples, rate)), settings: `${settings} · ${rate / 1000} kHz`, peak },
         ...t,
@@ -80,6 +104,7 @@ export default function MicTestPage() {
     } catch {
       setError("Couldn't record. Check that the microphone is allowed and not used by another app.");
     } finally {
+      ai?.stop();
       stopStream(stream);
       setBusy(null);
       setLevel(0);
@@ -92,8 +117,8 @@ export default function MicTestPage() {
         <p className="text-[11px] font-semibold tracking-[0.18em] text-subtle uppercase">Speech to text · step 1</p>
         <h1 className="mt-1 text-3xl font-semibold tracking-tight">Microphone test</h1>
         <p className="mt-2 text-sm text-muted">
-          Hear exactly what the viva records from your microphone: the same browser settings (echo cancellation,
-          noise suppression, automatic volume) and the same point in the audio path. Recordings stay in this browser.
+          Hear exactly what the viva records from your microphone (same settings, same point in the audio path), and
+          compare it with AI noise removal that runs right in the browser. Recordings stay in this browser.
         </p>
       </div>
 
@@ -118,13 +143,33 @@ export default function MicTestPage() {
         />
         <audio ref={voice} src="/echo-test-voice.wav" preload="auto" />
 
-        <div className="flex flex-wrap gap-3">
-          <Button disabled={!!busy} onClick={() => record(true)}>
-            <MicIcon /> {busy === "viva" ? `Recording… ${left}s` : `Record ${SECONDS} s as in the viva`}
-          </Button>
-          <Button variant="outline" disabled={!!busy} onClick={() => record(false)}>
-            {busy === "raw" ? `Recording… ${left}s` : "Record raw (processing off)"}
-          </Button>
+        <div className="space-y-3">
+          <p className="text-xs font-medium text-muted">Record {SECONDS} seconds with:</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {(["viva", "raw", "rnnoise", "gtcrn"] as Mode[]).map((m) => (
+              <button
+                key={m}
+                type="button"
+                disabled={!!busy}
+                onClick={() => record(m)}
+                className={`rounded-2xl border p-4 text-left transition disabled:opacity-60 ${
+                  busy === m ? "border-accent bg-accent-soft" : "border-border-strong bg-tint hover:bg-raised"
+                }`}
+              >
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <MicIcon className="h-4 w-4 text-accent" />
+                  {busy === m ? `Recording… ${left}s` : MODE_LABEL[m]}
+                </span>
+                <span className="mt-1 block text-xs text-muted">
+                  {m === "viva"
+                    ? "What the viva uses now: Chrome's built-in noise suppression."
+                    : m === "raw"
+                      ? "No clean-up at all, to compare."
+                      : DENOISERS[m].about}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
         {busy && (
           <div className="flex items-center gap-3 text-sm">

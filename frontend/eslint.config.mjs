@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Third-party noise-removal models copied in by scripts/copy-noise-models.mjs.
+    "public/noise/**",
   ]),
 ]);
 

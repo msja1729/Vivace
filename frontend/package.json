@@ -6,10 +6,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "predev": "node scripts/copy-noise-models.mjs",
+    "prebuild": "node scripts/copy-noise-models.mjs"
   },
   "dependencies": {
     "@azure/msal-browser": "^5.25.1",
+    "@sapphi-red/web-noise-suppressor": "0.4.1",
     "next": "16.4.0",
     "react": "19.3.0",
     "react-dom": "19.3.0"

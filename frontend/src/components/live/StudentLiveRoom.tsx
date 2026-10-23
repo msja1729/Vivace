@@ -11,7 +11,7 @@ import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Display";
 import { Checkbox, FormError } from "@/components/ui/Field";
 import { MicIcon, VideoIcon } from "@/components/ui/Icons";
-import { DeviceCheck, RemoteVideo } from "./Media";
+import { DeviceCheck, NvidiaTip, RemoteVideo } from "./Media";
 
 type Step = "consent" | "devices" | "calibrate" | "room" | "ended";
 const CORNERS = ["top-left", "top-right", "bottom-right", "bottom-left"] as const;
@@ -45,10 +45,13 @@ export function StudentLiveRoom({ v, onEnded }: { v: StudentViva; onEnded: () =>
         onReady={() => setStep("calibrate")}
         readyLabel="Continue to calibration"
         tips={
-          <ul className="space-y-1 text-sm text-muted">
-            <li>Sit facing the screen, with your whole face visible and lit from the front.</li>
-            <li>Clear your desk: no phone, books or second screen in view. Be alone in the room.</li>
-          </ul>
+          <div className="space-y-3">
+            <ul className="space-y-1 text-sm text-muted">
+              <li>Sit facing the screen, with your whole face visible and lit from the front.</li>
+              <li>Clear your desk: no phone, books or second screen in view. Be alone in the room.</li>
+            </ul>
+            <NvidiaTip />
+          </div>
         }
       />
     );

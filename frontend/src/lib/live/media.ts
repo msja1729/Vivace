@@ -5,10 +5,14 @@ import { AUDIO, FRAME, type LiveRoom } from "./room";
 /** The microphone settings the viva uses. `processing: false` turns the browser's clean-up off (for the
  * microphone test's comparison). Echo cancellation keeps the other person's voice (from the speakers)
  * out of this mic. */
-export function micConstraints(audioId?: string, processing = true): MediaTrackConstraints {
+export function micConstraints(
+  audioId?: string,
+  processing = true,
+  browserNoiseSuppression = processing, // off when an AI denoiser does the noise removal instead
+): MediaTrackConstraints {
   return {
     echoCancellation: processing,
-    noiseSuppression: processing,
+    noiseSuppression: browserNoiseSuppression,
     autoGainControl: processing,
     deviceId: audioId ? { exact: audioId } : { ideal: "default" },
   };

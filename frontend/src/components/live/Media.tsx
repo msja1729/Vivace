@@ -193,3 +193,17 @@ export function RemoteVideo({ stream, children }: { stream: MediaStream | null; 
     </div>
   );
 }
+
+/** For anyone with an NVIDIA RTX laptop: NVIDIA Broadcast's AI noise removal gives the clearest voice. */
+export function NvidiaTip() {
+  return (
+    <p className="rounded-xl border border-border bg-tint px-3 py-2 text-xs text-muted">
+      <span className="font-medium text-text">Have an NVIDIA RTX laptop?</span> Install the free{" "}
+      <a href="https://www.nvidia.com/en-us/geforce/broadcasting/broadcast-app/" target="_blank" rel="noreferrer" className="text-accent hover:underline">
+        NVIDIA Broadcast
+      </a>{" "}
+      app, turn on its noise removal, then choose <span className="font-medium">Microphone (NVIDIA Broadcast)</span> below
+      for the clearest voice.
+    </p>
+  );
+}

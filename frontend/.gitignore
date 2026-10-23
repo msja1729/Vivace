@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Noise-removal models, copied from node_modules before dev / build
+public/noise/
