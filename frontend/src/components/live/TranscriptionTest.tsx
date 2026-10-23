@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { API_URL } from "@/lib/api/client";
+import type { User } from "@/types";
+import { API_URL, api } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { readSession } from "@/lib/auth/session";
 import { micConstraints, stopStream, streamAudio } from "@/lib/live/media";
@@ -46,6 +47,14 @@ export function TranscriptionTest({ mic }: { mic: string }) {
 
   async function start() {
     setError(null);
+    // A login saved in this browser may have expired: check with the server first. (If it has, the
+    // request clears it and the page shows the "Log in" prompt.)
+    try {
+      await api<User>("/users/me");
+    } catch {
+      setError("Your login has expired. Log in again.");
+      return;
+    }
     let stream: MediaStream | null = null;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: micConstraints(mic || undefined) });

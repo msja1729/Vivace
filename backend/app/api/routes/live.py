@@ -83,10 +83,11 @@ async def stt_test(ws: WebSocket, token: str = ""):
         user = db.get(User, user_id) if user_id else None
     finally:
         db.close()
-    if user is None or user.role is None:
-        await ws.close(code=4401, reason="Log in to test transcription.")
-        return
+    # Accept first, then close: a close before accepting reaches the browser only as "couldn't connect".
     await ws.accept()
+    if user is None or user.role is None:
+        await ws.close(code=4401, reason="Your login has expired. Log in again.")
+        return
     segmenter = audio.Segmenter()
     keyterms: tuple[str, ...] = ()
     loop = asyncio.get_running_loop()
