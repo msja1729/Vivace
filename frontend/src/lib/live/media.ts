@@ -94,8 +94,11 @@ registerProcessor("pcm-tap", PcmTap);
 
 const TARGET_RATE = 16000;
 
+/** Anything the PCM can go to: the live room, or the transcription test's connection. */
+export type AudioSink = Pick<LiveRoom, "sendBinary">;
+
 /** Sends the microphone as 16 kHz 16-bit mono PCM, ~100 ms per message. Returns a stop function. */
-export async function streamAudio(stream: MediaStream, room: LiveRoom): Promise<() => void> {
+export async function streamAudio(stream: MediaStream, room: AudioSink): Promise<() => void> {
   const ctx = new AudioContext();
   const url = URL.createObjectURL(new Blob([TAP_WORKLET], { type: "application/javascript" }));
   await ctx.audioWorklet.addModule(url);

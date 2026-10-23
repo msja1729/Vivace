@@ -6,6 +6,7 @@ import { listDevices, micConstraints, recordMic, stopStream, wavBlob } from "@/l
 import { Card } from "@/components/ui/Card";
 import { Checkbox, FormError, inputClass } from "@/components/ui/Field";
 import { MicIcon } from "@/components/ui/Icons";
+import { TranscriptionTest } from "@/components/live/TranscriptionTest";
 
 const SECONDS = 8;
 
@@ -182,6 +183,8 @@ export default function MicTestPage() {
         )}
         <FormError message={error} />
       </Card>
+
+      <TranscriptionTest mic={mic} />
 
       {takes.length > 0 && (
         <Card className="space-y-4 rounded-3xl p-6">

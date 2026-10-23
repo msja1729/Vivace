@@ -12,6 +12,7 @@ from app.core.errors import AppError
 from app.core.security import decode_access_token
 from app.live import session as live_session
 from app.live.engines import status as engine_status
+from app.live.integrity import audio, deepgram
 from app.live.session import hub
 from app.models import User
 from app.schemas.live import QueueOut, ReleaseIn, ResultIn, SessionReportOut
@@ -65,6 +66,77 @@ def event_snapshot(session_id: str, event_id: int, user: RegisteredUser, db: DbS
 def engines(user: RegisteredUser):
     """Which detectors and models are loaded on this server."""
     return engine_status()
+
+
+TEST_SECONDS = 600  # one transcription test may run at most 10 minutes
+
+
+@router.websocket("/ws/stt-test")
+async def stt_test(ws: WebSocket, token: str = ""):
+    """Live transcription test (mic test page): exactly the viva's speech-to-text path. The browser sends
+    16 kHz PCM like in a viva (byte 0x02 + PCM); each speech segment the viva's pause detector cuts out
+    is transcribed by the viva's transcriber, with any key terms from a {"type": "keyterms"} message.
+    Signed-in users only, as it uses the Deepgram account."""
+    user_id = decode_access_token(token)
+    db = live_session.db_factory()
+    try:
+        user = db.get(User, user_id) if user_id else None
+    finally:
+        db.close()
+    if user is None or user.role is None:
+        await ws.close(code=4401, reason="Log in to test transcription.")
+        return
+    await ws.accept()
+    segmenter = audio.Segmenter()
+    keyterms: tuple[str, ...] = ()
+    loop = asyncio.get_running_loop()
+    t0 = loop.time()
+    speaking = None
+
+    async def transcribe(seg: audio.Segment) -> None:
+        started = loop.time()
+        result = await loop.run_in_executor(live_session.STT_POOL, audio.transcribe, seg.pcm, keyterms)
+        await ws.send_json(
+            {
+                "type": "text",
+                "text": result.text if result else "",
+                "engine": result.engine if result else "none",
+                "start": round(seg.start, 2),
+                "end": round(seg.end, 2),
+                "ms": round((loop.time() - started) * 1000),
+            }
+        )
+
+    try:
+        while loop.time() - t0 < TEST_SECONDS:
+            message = await ws.receive()
+            if message["type"] == "websocket.disconnect":
+                return
+            if message.get("text") is not None:
+                try:
+                    msg = json.loads(message["text"])
+                except json.JSONDecodeError:
+                    continue
+                if msg.get("type") == "keyterms":
+                    raw = msg.get("terms") or []
+                    keyterms = tuple(str(t).strip()[:60] for t in raw if str(t).strip())[
+                        : deepgram.MAX_KEYTERMS
+                    ]
+                continue
+            data = message.get("bytes")
+            if not data or data[0] != live_session.AUDIO:
+                continue
+            segments, _ = segmenter.feed(data[1:], loop.time() - t0)
+            if segmenter.speaking != speaking:
+                speaking = segmenter.speaking
+                await ws.send_json({"type": "speaking", "speaking": speaking})
+            for seg in segments:
+                asyncio.create_task(transcribe(seg))
+        await ws.close(code=4408, reason="Test time is up (10 minutes). Start again to continue.")
+    except WebSocketDisconnect:
+        pass
+    except Exception:  # noqa: BLE001
+        log.exception("Transcription test error")
 
 
 @router.websocket("/ws/vivas/{viva_id}/students/{student_id}")

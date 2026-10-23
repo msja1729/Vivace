@@ -121,6 +121,7 @@ def cosine(a, b) -> float:
 class Transcript:
     text: str
     words: list[tuple[float, float, str]]  # (start, end, word), seconds from the segment start
+    engine: str = "whisper"  # "deepgram" or "whisper" (Deepgram's backup, or the configured engine)
 
 
 def transcribe(pcm: bytes, keyterms: tuple[str, ...] = ()) -> Transcript | None:
@@ -129,7 +130,7 @@ def transcribe(pcm: bytes, keyterms: tuple[str, ...] = ()) -> Transcript | None:
     if get_settings().stt_provider == "deepgram":
         try:
             text, words = deepgram.transcribe(pcm, keyterms)
-            return Transcript(text, words)
+            return Transcript(text, words, "deepgram")
         except deepgram.DeepgramError as exc:
             log.warning("Deepgram failed (%s); using local Whisper for this segment", exc)
     return _whisper(pcm)

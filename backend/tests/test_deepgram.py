@@ -89,3 +89,49 @@ def test_keyterms_are_names_then_technical_terms():
     assert terms[3] == "PostgreSQL"  # the most frequent term comes first
     assert {"FastAPI", "YOLOv8"} <= set(terms)
     assert "Backend" not in terms and "Detection" not in terms  # ordinary sentence-start words
+
+
+class OneSegment:
+    """Stands in for the pause detector: the first audio chunk is one finished utterance."""
+
+    def __init__(self):
+        self.speaking = False
+        self.fed = 0
+
+    def feed(self, pcm, t):
+        self.fed += 1
+        self.speaking = self.fed == 1
+        return ([audio.Segment(0.0, 1.5, pcm)] if self.fed == 1 else []), 1.0
+
+
+def test_transcription_test_needs_login(client):
+    from starlette.websockets import WebSocketDisconnect
+
+    with (
+        pytest.raises(WebSocketDisconnect) as exc,
+        client.websocket_connect("/api/ws/stt-test?token=nope") as ws,
+    ):
+        ws.receive_json()
+    assert exc.value.code == 4401
+
+
+def test_transcription_test_returns_each_utterance(client, login, monkeypatch):
+    from app.live import session as live_session
+
+    seen = {}
+
+    def fake_transcribe(pcm, keyterms=()):
+        seen["keyterms"] = keyterms
+        return audio.Transcript("Hello Jyothiradithya.", [], "deepgram")
+
+    monkeypatch.setattr(audio, "Segmenter", OneSegment)
+    monkeypatch.setattr(audio, "transcribe", fake_transcribe)
+    token = login("Asha", "asha@school.edu", role="student")["Authorization"].split()[1]
+    with client.websocket_connect(f"/api/ws/stt-test?token={token}") as ws:
+        ws.send_json({"type": "keyterms", "terms": ["Jyothiradithya", " ", "Lean 4"]})
+        ws.send_bytes(bytes([live_session.AUDIO]) + b"\0\0" * 1600)
+        assert ws.receive_json() == {"type": "speaking", "speaking": True}
+        line = ws.receive_json()
+    assert line["type"] == "text" and line["text"] == "Hello Jyothiradithya."
+    assert line["engine"] == "deepgram" and line["end"] == 1.5
+    assert seen["keyterms"] == ("Jyothiradithya", "Lean 4")
