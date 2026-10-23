@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     gemini_fallback_models: list[str] = ["gemini-2.5-flash"]
     llm_model: str = "claude-sonnet-5-5"
     llm_effort: Literal["low", "medium", "high"] = "medium"
+    # Speech to text: "deepgram" (cloud, DEEPGRAM_API_KEY) or "whisper" (local faster-whisper). With
+    # Deepgram, local Whisper is the backup for any segment Deepgram can't handle.
+    stt_provider: Literal["whisper", "deepgram"] = "whisper"
+    deepgram_api_key: str = ""
+    deepgram_model: str = "nova-3"
     whisper_model: str = "base.en"  # faster-whisper size: tiny.en, base.en, small.en, medium.en …
     ml_device: Literal["auto", "cpu", "cuda"] = "auto"
     # Integrity snapshots are deleted this many days after the session (0 = keep).

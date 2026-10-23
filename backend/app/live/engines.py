@@ -184,7 +184,9 @@ ENGINE_LABELS = {
     "face": "Face, gaze & head pose (MediaPipe)",
     "objects": "Objects & extra people (YOLOv8n)",
     "vad": "Voice activity (WebRTC VAD)",
-    "stt": "Speech to text (faster-whisper)",
+    "stt": "Speech to text (Deepgram Nova-3, local Whisper backup)"
+    if get_settings().stt_provider == "deepgram"
+    else "Speech to text (faster-whisper)",
     "speaker": "Voice print (SpeechBrain ECAPA)",
     "embeddings": "Answer similarity (MiniLM)",
 }

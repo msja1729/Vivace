@@ -21,6 +21,9 @@ def upload_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(get_settings(), "live_warm_up", False)
     monkeypatch.setattr(get_settings(), "snapshot_retention_days", 0)
     monkeypatch.setattr(get_settings(), "auth_mode", "dev")  # the login() helper uses dev-login
+    # Never call real cloud services from tests, whatever backend/.env says.
+    monkeypatch.setattr(get_settings(), "stt_provider", "whisper")
+    monkeypatch.setattr(get_settings(), "deepgram_api_key", "")
     return tmp_path / "uploads"
 
 

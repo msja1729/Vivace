@@ -1,10 +1,16 @@
 """Audio from the browsers arrives as 16 kHz mono 16-bit PCM. This module cuts it into speech
-segments (webrtcvad), and wraps the voice print (SpeechBrain ECAPA) and speech-to-text (faster-whisper)."""
+segments (webrtcvad), and wraps the voice print (SpeechBrain ECAPA) and speech-to-text (Deepgram,
+with local faster-whisper as the default / backup)."""
 
+import logging
 from collections import deque
 from dataclasses import dataclass
 
+from app.core.config import get_settings
 from app.live import engines
+from app.live.integrity import deepgram
+
+log = logging.getLogger("live.audio")
 
 RATE = 16000
 FRAME_MS = 30
@@ -117,7 +123,19 @@ class Transcript:
     words: list[tuple[float, float, str]]  # (start, end, word), seconds from the segment start
 
 
-def transcribe(pcm: bytes) -> Transcript | None:
+def transcribe(pcm: bytes, keyterms: tuple[str, ...] = ()) -> Transcript | None:
+    """Deepgram if configured (names / project terms as key terms), else local Whisper. If Deepgram
+    fails for a segment, Whisper transcribes it instead, so the transcript never stops."""
+    if get_settings().stt_provider == "deepgram":
+        try:
+            text, words = deepgram.transcribe(pcm, keyterms)
+            return Transcript(text, words)
+        except deepgram.DeepgramError as exc:
+            log.warning("Deepgram failed (%s); using local Whisper for this segment", exc)
+    return _whisper(pcm)
+
+
+def _whisper(pcm: bytes) -> Transcript | None:
     model = engines.whisper()
     if model is None:
         return None

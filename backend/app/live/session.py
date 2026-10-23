@@ -29,7 +29,7 @@ from app.live.evaluation import agents, metrics
 from app.live.evaluation import context as ctx
 from app.live.evaluation import report as ai_report
 from app.live.evaluation.llm import LLMError, get_llm, llm_error
-from app.live.integrity import audio
+from app.live.integrity import audio, deepgram
 from app.live.integrity.rules import LABELS, Change, Flag, IntegrityMonitor
 from app.live.integrity.vision import FrameObs, analyze
 from app.models import SessionStatus, Speaker, Viva, VivaEvent, VivaSession, VivaTurn
@@ -138,6 +138,9 @@ class LiveSession:
             self.mastery = s.mastery_score
             self.proctor_frames, self.face_frames = s.proctor_frames, s.face_frames
             self.monitor.peak_risk = s.risk_score
+            # Names Deepgram should spell right (project terms are added once the work is read).
+            self._names = [s.student.name] + ([s.examiner.name] if s.examiner else [])
+            self.keyterms = deepgram.keyterms_for(self._names)
             self._brief = {
                 "title": viva.title,
                 "instructions": viva.interview_instructions,
@@ -178,6 +181,7 @@ class LiveSession:
             log.exception("Building the viva context failed")
             context = ctx.Context("(Couldn't read the student's submission.)", [])
         self.state = agents.ExamState(context=context, **self._brief)
+        self.keyterms = deepgram.keyterms_for(self._names, context.brief)
         if self.examiner is not None and not self.suggestions:
             asyncio.create_task(self.refresh_suggestions())
 
@@ -437,7 +441,7 @@ class LiveSession:
         while True:
             speaker, seg = await self._stt_queue.get()
             try:
-                result = await loop.run_in_executor(STT_POOL, audio.transcribe, seg.pcm)
+                result = await loop.run_in_executor(STT_POOL, audio.transcribe, seg.pcm, self.keyterms)
                 if result is None or not result.text:
                     continue
                 await self._add_turn(speaker, result.text, seg.start, seg.end, words=result.words)
