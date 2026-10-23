@@ -102,3 +102,23 @@ def test_gemini_moves_on_to_the_backup_model(monkeypatch, status):
     model, _ = gemini(monkeypatch, handler)
     assert asyncio.run(model.json("system", "prompt", SCHEMA)) == {"score": 9}
     assert "main-model" in urls[0] and "backup-model" in urls[-1]
+
+
+def test_gemini_moves_on_when_a_model_hangs(monkeypatch):
+    def handler(req, n):
+        if "main-model" in str(req.url):
+            raise httpx.ReadTimeout("no answer", request=req)
+        return reply('{"score": 4}')
+
+    model, sent = gemini(monkeypatch, handler)
+    assert asyncio.run(model.json("system", "prompt", SCHEMA)) == {"score": 4}
+    assert len(sent) == 2  # no retry of the stuck model: straight on to the next one
+
+
+def test_gemini_unreachable_when_every_model_fails_to_connect(monkeypatch):
+    def handler(req, n):
+        raise httpx.ConnectError("offline", request=req)
+
+    model, _ = gemini(monkeypatch, handler)
+    with pytest.raises(LLMError, match="Can't reach the Gemini API"):
+        asyncio.run(model.json("system", "prompt", SCHEMA))

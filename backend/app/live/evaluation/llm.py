@@ -78,6 +78,7 @@ GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:ge
 # Gemini answers "busy" (503) or "over the free limit" (429) now and then, especially on its newest
 # model. Free-tier limits are per model, so moving on to the next model keeps the viva going.
 BUSY = {500, 502, 503, 504}
+NO_ANSWER = 599  # our own code: the request timed out or the connection failed
 
 
 class GeminiLLM:
@@ -91,7 +92,10 @@ class GeminiLLM:
         if not settings.gemini_api_key:
             raise LLMError("Gemini API key missing (set GEMINI_API_KEY in backend/.env).")
         self._httpx = httpx
-        self._client = httpx.AsyncClient(timeout=90.0, headers={"x-goog-api-key": settings.gemini_api_key})
+        # A model that hasn't answered in 25 s is stuck (it happens): better to try the next one.
+        self._client = httpx.AsyncClient(
+            timeout=httpx.Timeout(25.0, connect=10.0), headers={"x-goog-api-key": settings.gemini_api_key}
+        )
         models = [settings.gemini_model, *settings.gemini_fallback_models]
         self._models = list(dict.fromkeys(m for m in models if m))  # in order, no repeats
         self._retry_delay = retry_delay
@@ -114,9 +118,9 @@ class GeminiLLM:
                 await asyncio.sleep(self._retry_delay)
                 res = await self._ask(model, body, schema)
             statuses.append(res.status_code)
-            if res.status_code in BUSY or res.status_code in (404, 429):
+            if res.status_code in BUSY or res.status_code in (404, 429, NO_ANSWER):
                 log.warning("Gemini %s answered %s; trying the next model", model, res.status_code)
-                continue  # this model is busy, unknown or out of free quota: try the next one
+                continue  # busy, stuck, unknown or out of free quota: try the next one
             if res.status_code in (401, 403) or (res.status_code == 400 and "API key" in res.text):
                 raise LLMError("Gemini API key missing or invalid (set GEMINI_API_KEY in backend/.env).")
             if res.status_code >= 400:
@@ -127,6 +131,8 @@ class GeminiLLM:
             raise LLMError(
                 "Gemini model not found: check GEMINI_MODEL in backend/.env (see aistudio.google.com)."
             )
+        if all(code == NO_ANSWER for code in statuses):
+            raise LLMError("Can't reach the Gemini API: check the server's internet connection.")
         if 429 in statuses and not any(code in BUSY for code in statuses):
             raise LLMError("Gemini free-tier limit reached on every model; try again in a minute.")
         raise LLMError("Gemini is busy right now (Google's servers); try Refresh in a moment.")
@@ -164,7 +170,8 @@ class GeminiLLM:
         try:
             return await self._client.post(url, json=body)
         except self._httpx.HTTPError as exc:
-            raise LLMError("Can't reach the Gemini API.") from exc
+            log.warning("Gemini request failed: %r", exc)
+            return self._httpx.Response(NO_ANSWER)
 
 
 _llm: LLM | None = None
