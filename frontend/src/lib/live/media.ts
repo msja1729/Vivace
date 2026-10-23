@@ -2,6 +2,18 @@
 
 import { AUDIO, FRAME, type LiveRoom } from "./room";
 
+/** The microphone settings the viva uses. `processing: false` turns the browser's clean-up off (for the
+ * microphone test's comparison). Echo cancellation keeps the other person's voice (from the speakers)
+ * out of this mic. */
+export function micConstraints(audioId?: string, processing = true): MediaTrackConstraints {
+  return {
+    echoCancellation: processing,
+    noiseSuppression: processing,
+    autoGainControl: processing,
+    deviceId: audioId ? { exact: audioId } : { ideal: "default" },
+  };
+}
+
 /** Opens the camera and microphone. Without a chosen device, prefers the system's default microphone:
  * Chrome may otherwise pick a silent virtual input (e.g. SteelSeries Sonar, OBS, voice changers). */
 export async function openCameraAndMic(choice: { audioId?: string; videoId?: string } = {}): Promise<MediaStream> {
@@ -12,13 +24,7 @@ export async function openCameraAndMic(choice: { audioId?: string; videoId?: str
       frameRate: { ideal: 24 },
       ...(choice.videoId ? { deviceId: { exact: choice.videoId } } : {}),
     },
-    // Echo cancellation keeps the other person's voice (from the speakers) out of this mic.
-    audio: {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-      deviceId: choice.audioId ? { exact: choice.audioId } : { ideal: "default" },
-    },
+    audio: micConstraints(choice.audioId),
   });
 }
 
@@ -128,4 +134,61 @@ export async function streamAudio(stream: MediaStream, room: LiveRoom): Promise<
     source.disconnect();
     void ctx.close();
   };
+}
+
+/** Records `seconds` of the microphone at the point the viva taps it (before the 16 kHz conversion),
+ * for the microphone test. Resolves with the samples and their rate. */
+export async function recordMic(
+  stream: MediaStream,
+  seconds: number,
+  onLevel?: (peak: number) => void,
+): Promise<{ samples: Float32Array; rate: number }> {
+  const ctx = new AudioContext();
+  const url = URL.createObjectURL(new Blob([TAP_WORKLET], { type: "application/javascript" }));
+  await ctx.audioWorklet.addModule(url);
+  URL.revokeObjectURL(url);
+  const source = ctx.createMediaStreamSource(new MediaStream(stream.getAudioTracks()));
+  const tap = new AudioWorkletNode(ctx, "pcm-tap");
+  const silent = ctx.createGain();
+  silent.gain.value = 0;
+  source.connect(tap).connect(silent).connect(ctx.destination);
+  const chunks: Float32Array[] = [];
+  tap.port.onmessage = (e: MessageEvent<Float32Array>) => {
+    chunks.push(e.data);
+    if (onLevel) onLevel(e.data.reduce((m, v) => Math.max(m, Math.abs(v)), 0));
+  };
+  await new Promise((r) => setTimeout(r, seconds * 1000));
+  tap.port.onmessage = null;
+  source.disconnect();
+  const rate = ctx.sampleRate;
+  await ctx.close();
+  const samples = new Float32Array(chunks.reduce((n, c) => n + c.length, 0));
+  let at = 0;
+  for (const c of chunks) {
+    samples.set(c, at);
+    at += c.length;
+  }
+  return { samples, rate };
+}
+
+/** 16-bit mono WAV file from float samples (for playback and download). */
+export function wavBlob(samples: Float32Array, rate: number): Blob {
+  const buf = new ArrayBuffer(44 + samples.length * 2);
+  const v = new DataView(buf);
+  const text = (o: number, s: string) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  text(0, "RIFF");
+  v.setUint32(4, 36 + samples.length * 2, true);
+  text(8, "WAVE");
+  text(12, "fmt ");
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); // PCM
+  v.setUint16(22, 1, true); // mono
+  v.setUint32(24, rate, true);
+  v.setUint32(28, rate * 2, true);
+  v.setUint16(32, 2, true);
+  v.setUint16(34, 16, true);
+  text(36, "data");
+  v.setUint32(40, samples.length * 2, true);
+  samples.forEach((x, i) => v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, x)) * 0x7fff, true));
+  return new Blob([buf], { type: "audio/wav" });
 }
