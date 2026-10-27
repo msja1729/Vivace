@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Vivace Viva Prep</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one short reading column, pitch first, then five parts, then spec questions. */
+:root {
+  --bg: #f3f6f5; --surface: #ffffff; --ink: #13201e; --muted: #566764; --line: #d6e0dd;
+  --accent: #0b7a68; --accent-soft: #dff1ec; --warn: #a34d06; --warn-soft: #fbeedd; --good: #1f7a3a;
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1514; --surface: #162120; --ink: #e4eeeb; --muted: #94a8a4; --line: #29403c;
+    --accent: #52c8b1; --accent-soft: #173733; --warn: #f2aa5f; --warn-soft: #36281a; --good: #6fd08b;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1514; --surface: #162120; --ink: #e4eeeb; --muted: #94a8a4; --line: #29403c;
+  --accent: #52c8b1; --accent-soft: #173733; --warn: #f2aa5f; --warn-soft: #36281a; --good: #6fd08b;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 17px; line-height: 1.55; }
+.wrap {
+  max-width: 780px; margin: 0 auto; padding-block: 32px 80px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 40px;
+}
+h1, h2 { font-family: var(--display); text-wrap: balance; line-height: 1.15; margin: 0; }
+h1 { font-size: clamp(1.9rem, 5vw, 2.5rem); font-weight: 800; letter-spacing: -0.02em; }
+h2 { font-size: 1.4rem; font-weight: 800; }
+p { margin: 0; }
+.mono { font-family: var(--mono); font-size: 0.86em; }
+.label { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.muted { color: var(--muted); }
+section { display: grid; gap: 14px; }
+header { display: grid; gap: 10px; }
+.progress { display: flex; align-items: center; gap: 10px; font-size: 0.9rem; color: var(--muted); }
+.meter { width: 140px; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.meter > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+.progress b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.pitch { background: var(--accent-soft); border-radius: 12px; padding: 18px 20px; display: grid; gap: 10px; }
+.part { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 12px; }
+.part .one { font-size: 1.02rem; }
+.qs { display: grid; gap: 8px; }
+details.q { border: 1px solid var(--line); border-radius: 9px; background: var(--bg); }
+details.q > summary { list-style: none; cursor: pointer; padding: 11px 14px; display: flex; gap: 10px; font-weight: 700; }
+details.q > summary::-webkit-details-marker { display: none; }
+details.q > summary::before { content: "Q"; font-family: var(--mono); font-size: 0.75rem; color: var(--accent); padding-top: 3px; flex: none; }
+details.q[open] > summary { border-bottom: 1px solid var(--line); }
+details.q.known > summary::after { content: "✓"; margin-left: auto; color: var(--good); flex: none; }
+.ans { padding: 12px 14px 14px 34px; display: grid; gap: 10px; }
+.know { display: inline-flex; gap: 8px; align-items: center; font-size: 0.85rem; color: var(--muted); cursor: pointer; }
+.know input { width: 17px; height: 17px; accent-color: var(--accent); }
+.warnbox { background: var(--warn-soft); border-radius: 12px; padding: 16px 18px; display: grid; gap: 8px; }
+.warnbox .label { color: var(--warn); }
+.warnbox ul { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
+.numgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 8px; }
+.num { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 2px; }
+.num b { font-family: var(--mono); font-size: 0.9rem; color: var(--accent); }
+.num span { font-size: 0.86rem; color: var(--muted); }
+summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head><body>
+
+<div class="wrap">
+  <header>
+    <span class="label">Project 3 · quick prep</span>
+    <h1>Vivace: the short version</h1>
+    <p class="muted">Read the pitch. Then for each question, answer out loud first, then open it to check.</p>
+    <div class="progress" aria-live="polite">
+      <div class="meter"><i id="meterFill"></i></div>
+      <span><b id="knownCount">0</b> / <b id="totalCount">0</b> known</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>1. Your pitch (learn this)</h2>
+    <div class="pitch">
+      <p><strong>Vivace runs oral exams for a whole class.</strong> Students join a class and upload their work. The instructor schedules a viva and splits students between themselves and their TAs, who interview in parallel.</p>
+      <p>During the video interview, the AI works in the background: it watches for cheating on the camera and mic, transcribes both people, grades each answer against the student's own work, and suggests the next question. At the end it writes a report with evidence.</p>
+      <p><strong>The AI advises; the human examiner decides.</strong> Next.js frontend, FastAPI backend, SQLite, MediaPipe and YOLO for vision, Deepgram for speech, Claude or Gemini for grading. Hosted on my laptop through Tailscale Funnel.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>2. The five parts</h2>
+    <div id="parts" style="display:grid;gap:14px"></div>
+  </section>
+
+  <section>
+    <h2>3. Spec questions (your professor's chapter)</h2>
+    <div class="warnbox">
+      <span class="label">Admit this before they ask</span>
+      <p>SPEC.md no longer matches the code. Say: "The spec drifted. I changed direction and should have updated SPEC.md first."</p>
+      <ul>
+        <li>Spec: the AI asks the questions. Built: a human asks, the AI suggests.</li>
+        <li>Spec: Celery, Redis, Postgres. Built: simple threads and SQLite.</li>
+        <li>Not built: GitHub repo cloning, screen-share walkthrough.</li>
+      </ul>
+    </div>
+    <div class="qs" id="sddQs"></div>
+  </section>
+
+  <section>
+    <h2>4. Numbers to remember</h2>
+    <div class="numgrid">
+      <div class="num"><b>risk = Σ weight × (1 + sec/10)</b><span>capped at 100. Phone for 5 s = 30</span></div>
+      <div class="num"><b>mastery = 0.5c + 0.3s + 0.2f</b><span>correctness, similarity, fluency (× 100)</span></div>
+      <div class="num"><b>5 frames per second</b><span>sent from the student's camera</span></div>
+      <div class="num"><b>3 seconds</b><span>looking away before a flag</span></div>
+      <div class="num"><b>top 4 passages</b><span>given to the AI as evidence (RAG)</span></div>
+      <div class="num"><b>135 tests pass</b><span>backend automated tests</span></div>
+    </div>
+  </section>
+</div>
+
+<script>
+const PARTS = [
+  {
+    name: "How it fits together",
+    one: "Browser (Next.js) shows the pages. Backend (FastAPI) checks who you are and stores data in SQLite. A script runs both on my laptop and Tailscale Funnel gives a public HTTPS link.",
+    qs: [
+      ["Why check permissions in the backend, not the frontend?", "Anyone can change frontend code in their browser. The backend checks the login token and the rules on every request."],
+      ["How is login secured?", "Passwords are hashed with scrypt and a random salt, never stored as plain text. After login you get a JWT token, valid 24 hours, sent with every request."],
+      ["Why Tailscale Funnel?", "It gives a free public HTTPS address without a domain or opening ports. Browsers only allow camera and mic on HTTPS."]
+    ]
+  },
+  {
+    name: "The live call",
+    one: "The video goes directly between the two browsers (WebRTC). Separately, the student's browser sends 5 frames a second and audio to the backend over a WebSocket, for the AI.",
+    qs: [
+      ["Does the video go through your server?", "No. WebRTC connects the browsers directly. The server only passes the setup messages. The AI gets its own copy of frames and audio."],
+      ["Why a WebSocket?", "The server has to push flags, transcript lines and scores at any moment. A WebSocket stays open so both sides can send any time."],
+      ["What if the AI can't keep up with the frames?", "It always takes the newest frame and drops older ones, so it never falls behind."]
+    ]
+  },
+  {
+    name: "Cheating detection",
+    one: "MediaPipe finds the face, eyes and head angle. YOLO finds phones, books and extra people. Problems that last long enough become flags, which add up to a risk score from 0 to 100.",
+    qs: [
+      ["How do you detect looking away?", "First the student looks at the 4 screen corners, which sets their personal range. If their eyes go outside it for more than 3 seconds, it's flagged."],
+      ["How is the risk score calculated?", "Each flag has a weight (phone 20, second person 25). Score = weight × (1 + seconds / 10), added up over the last 10 minutes, max 100. Under 30 is low, 60 or more is high."],
+      ["Does a flag fail the student?", "No. It's evidence with a snapshot. The examiner decides."]
+    ]
+  },
+  {
+    name: "Speech and grading",
+    one: "Speech is turned into text (Deepgram, with Whisper as backup). When the examiner asks the next question, the previous answer is graded by the AI using the student's own work as evidence.",
+    qs: [
+      ["How do you know who said what?", "The student's mic and the examiner's mic come in as separate streams, so there's no guessing."],
+      ["What is RAG in your project?", "The student's files and the course files are split into small passages. For each answer, the 4 most relevant passages are given to the AI, so it grades against real evidence."],
+      ["Explain the mastery score.", "100 × (0.5 × correctness + 0.3 × similarity + 0.2 × fluency). Correctness comes from the AI. Similarity compares the answer to a model answer. Fluency looks at pauses, filler words and speed."]
+    ]
+  },
+  {
+    name: "Co-Pilot and report",
+    one: "The Co-Pilot lists topics from the student's work and suggests questions. At the end the AI writes a report with a verdict and quotes as evidence. Claude or Gemini can be used.",
+    qs: [
+      ["Why doesn't the AI ask the questions itself?", "The examiner is responsible for the grade, and a bad AI question in a live exam is hard to undo. So the AI suggests and the examiner picks."],
+      ["How do you keep the report honest?", "Every judgement must quote the student. It's allowed to say 'insufficient evidence' instead of guessing."],
+      ["What if the AI service is down?", "Video, cheating detection and the transcript keep working. Only grading and suggestions pause, with a message to the examiner."]
+    ]
+  }
+];
+
+const SDD_QS = [
+  ["Did you use spec-driven development?", "Yes. I wrote SPEC.md first: goal, features, tech stack, data model, build phases and success criteria. Then I built it phase by phase and tested each part."],
+  ["Where does your code differ from the spec?", "The human examiner leads instead of the AI, I used simple threads and SQLite instead of Celery and Postgres, and repo cloning and screen share aren't built. That's spec drift: I should have updated SPEC.md first."],
+  ["Vibe coding vs spec-driven development?", "Vibe coding: ask the AI, accept the code without reading it. Fine for throwaway tests. Spec-driven: write the spec first and check the code against it. Needed for real systems like an exam tool."],
+  ["The AI helped write the code. Do you understand it?", "Tests show it works, not that I understand it. So I went through each part's design decisions and practised questions like these without looking anything up."]
+];
+
+const KEY = "vivace-prep-short";
+let known = {};
+try { known = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) { known = {}; }
+let total = 0;
+
+function card(id, q, a) {
+  total++;
+  const d = document.createElement("details");
+  d.className = "q" + (known[id] ? " known" : "");
+  const s = document.createElement("summary"); s.textContent = q;
+  const ans = document.createElement("div"); ans.className = "ans";
+  const p = document.createElement("p"); p.textContent = a;
+  const lab = document.createElement("label"); lab.className = "know";
+  const box = document.createElement("input"); box.type = "checkbox"; box.id = "k-" + id; box.checked = !!known[id];
+  lab.append(box, "I can say this without looking");
+  box.addEventListener("change", () => {
+    if (box.checked) known[id] = 1; else delete known[id];
+    try { localStorage.setItem(KEY, JSON.stringify(known)); } catch (e) {}
+    d.classList.toggle("known", box.checked);
+    refresh();
+  });
+  ans.append(p, lab); d.append(s, ans);
+  return d;
+}
+
+const parts = document.getElementById("parts");
+PARTS.forEach((pt, i) => {
+  const box = document.createElement("div"); box.className = "part";
+  const h = document.createElement("h2"); h.textContent = pt.name; h.style.fontSize = "1.15rem";
+  const one = document.createElement("p"); one.className = "one"; one.textContent = pt.one;
+  const qs = document.createElement("div"); qs.className = "qs";
+  pt.qs.forEach(([q, a], j) => qs.append(card("p" + i + "-" + j, q, a)));
+  box.append(h, one, qs); parts.append(box);
+});
+const sdd = document.getElementById("sddQs");
+SDD_QS.forEach(([q, a], i) => sdd.append(card("s" + i, q, a)));
+
+function refresh() {
+  const n = Object.keys(known).length;
+  document.getElementById("knownCount").textContent = n;
+  document.getElementById("totalCount").textContent = total;
+  document.getElementById("meterFill").style.width = (100 * n / total) + "%";
+}
+refresh();
+</script>
+</body></html>
